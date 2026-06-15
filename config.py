@@ -65,6 +65,9 @@ class Production(Features):
 
     GA4_ID: str = os.environ.get("GA4_ID", "")
 
+    S3_BUCKET_NAME: str = os.environ.get("S3_BUCKET_NAME", "")
+    S3_MANIFEST_FILENAME: str = os.environ.get("S3_MANIFEST_FILENAME", "")
+
 
 class Staging(Production):
     DEBUG: bool = strtobool(os.getenv("DEBUG", "False"))

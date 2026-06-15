@@ -3,6 +3,8 @@ import os
 
 from flask import Flask
 from jinja2 import ChoiceLoader, PackageLoader
+from tna_utilities.datetime import pretty_date
+from tna_utilities.number import pretty_file_size
 
 from app.lib.cache import cache
 from app.lib.context_processor import cookie_preference, now_iso_8601
@@ -11,7 +13,7 @@ from app.lib.template_filters import slugify
 
 
 def create_app(config_class):
-    app = Flask(__name__, static_url_path="/static")
+    app = Flask(__name__, static_url_path="/static/merlin")
     app.config.from_object(config_class)
 
     gunicorn_error_logger = logging.getLogger("gunicorn.error")
@@ -35,6 +37,7 @@ def create_app(config_class):
         app,
         content_security_policy=app.config["CONTENT_SECURITY_POLICY"],
         allow_google_content_security_policy=True,
+        allow_typekit_content_security_policy=True,
         force_https=app.config["FORCE_HTTPS"],
     )
 
@@ -46,6 +49,7 @@ def create_app(config_class):
             PackageLoader("tna_frontend_jinja"),
         ]
     )
+    app.jinja_env.add_extension("jinja2.ext.do")
 
     @app.context_processor
     def context_processor():
@@ -64,12 +68,16 @@ def create_app(config_class):
             feature={},
         )
 
+    app.add_template_filter(pretty_date)
+    app.add_template_filter(pretty_file_size)
     app.add_template_filter(slugify)
 
     from .healthcheck import bp as healthcheck_bp
     from .main import bp as site_bp
+    from .merlin import bp as merlin_bp
 
     app.register_blueprint(healthcheck_bp, url_prefix="/healthcheck")
+    app.register_blueprint(merlin_bp, url_prefix="/merlin")
     app.register_blueprint(site_bp)
 
     return app

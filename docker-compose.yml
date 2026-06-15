@@ -13,10 +13,8 @@ services:
       - SECRET_KEY=abc123
       - NPM_DEVELOP_COMMAND=dev
       - COOKIE_DOMAIN=localhost
-      - CSP_STYLE_SRC=p.typekit.net,use.typekit.net
-      - CSP_FONT_SRC=use.typekit.net
     ports:
-      - 81:8080
+      - 65491:8080
     volumes:
       - ./:/app
     healthcheck:
@@ -28,4 +26,4 @@ services:
     volumes:
       - .:/docs
     ports:
-      - 1081:8000
+      - 65492:8000

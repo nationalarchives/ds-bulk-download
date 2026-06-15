@@ -56,5 +56,7 @@ In addition to the [base Docker image variables](https://github.com/nationalarch
 | `CACHE_DEFAULT_TIMEOUT`  | The number of seconds to cache pages for                                  | production: `300`, staging: `60`, develop: `0`, test: `0` |
 | `CACHE_DIR`              | Directory for storing cached responses when using `FileSystemCache`       | `/tmp`                                                    |
 | `GA4_ID`                 | The Google Analytics 4 ID                                                 | _none_                                                    |
+| `S3_BUCKET_NAME`         | The name of the S3 bucket containing the ZIP files and manifest           | _none_                                                    |
+| `S3_MANIFEST_FILENAME`   | The name of the JSON manifest                                             | _none_                                                    |
 
 [^1] [Debugging in Flask](https://flask.palletsprojects.com/en/2.3.x/debugging/)
