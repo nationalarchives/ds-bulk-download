@@ -6,7 +6,6 @@ from jinja2 import ChoiceLoader, PackageLoader
 from tna_utilities.datetime import pretty_date
 from tna_utilities.number import pretty_file_size
 
-from app.lib.cache import cache
 from app.lib.context_processor import cookie_preference, now_iso_8601
 from app.lib.talisman import talisman
 from app.lib.template_filters import slugify
@@ -20,17 +19,6 @@ def create_app(config_class):
     app.logger.handlers.extend(gunicorn_error_logger.handlers)
     app.logger.setLevel(
         gunicorn_error_logger.level or os.getenv("LOG_LEVEL", "warning").upper()
-    )
-
-    cache.init_app(
-        app,
-        config={
-            "CACHE_TYPE": app.config["CACHE_TYPE"],
-            "CACHE_DEFAULT_TIMEOUT": app.config["CACHE_DEFAULT_TIMEOUT"],
-            "CACHE_IGNORE_ERRORS": app.config["CACHE_IGNORE_ERRORS"],
-            "CACHE_DIR": app.config["CACHE_DIR"],
-            "CACHE_REDIS_URL": app.config["CACHE_REDIS_URL"],
-        },
     )
 
     talisman.init_app(

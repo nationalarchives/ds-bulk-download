@@ -54,15 +54,6 @@ class Production(Features):
     FORCE_HTTPS: bool = strtobool(os.getenv("FORCE_HTTPS", "False"))
     PREFERRED_URL_SCHEME: str = os.getenv("PREFERRED_URL_SCHEME", "https")
 
-    CACHE_DEFAULT_TIMEOUT: int = int(os.environ.get("CACHE_DEFAULT_TIMEOUT", "900"))
-    CACHE_IGNORE_ERRORS: bool = True
-    CACHE_DIR: str = os.environ.get("CACHE_DIR", "/tmp")
-    CACHE_REDIS_URL: str = os.environ.get("CACHE_REDIS_URL", "")
-    CACHE_TYPE: str = os.environ.get(
-        "CACHE_TYPE",
-        "RedisCache" if CACHE_REDIS_URL else "FileSystemCache",
-    )
-
     GA4_ID: str = os.environ.get("GA4_ID", "")
 
     S3_BUCKET_NAME: str = os.environ.get("S3_BUCKET_NAME", "")
@@ -72,13 +63,9 @@ class Production(Features):
 class Staging(Production):
     DEBUG: bool = strtobool(os.getenv("DEBUG", "False"))
 
-    CACHE_DEFAULT_TIMEOUT: int = int(os.environ.get("CACHE_DEFAULT_TIMEOUT", "60"))
-
 
 class Develop(Production):
     DEBUG: bool = strtobool(os.getenv("DEBUG", "False"))
-
-    CACHE_DEFAULT_TIMEOUT: int = int(os.environ.get("CACHE_DEFAULT_TIMEOUT", "1"))
 
 
 class Test(Production):
@@ -89,9 +76,6 @@ class Test(Production):
     DEBUG: bool = True
     TESTING: bool = True
     EXPLAIN_TEMPLATE_LOADING: bool = True
-
-    CACHE_TYPE: str = "SimpleCache"
-    CACHE_DEFAULT_TIMEOUT: int = 1
 
     FORCE_HTTPS: bool = False
     PREFERRED_URL_SCHEME: str = "http"

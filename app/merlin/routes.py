@@ -7,7 +7,6 @@ from app.merlin import bp
 
 @bp.route("/")
 @cacheable_duration(3600)
-# @cacheable_duration_cloudfront(3600, 86400)
 def index():
     try:
         manifest = get_merlin_files_manifest()
