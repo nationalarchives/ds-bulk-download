@@ -32,4 +32,4 @@ jobs:
             echo "Failed to trigger the lambda function"
             exit 1
           fi
-        # TODO: Run the deployed lambda (from aws/lambda/test.py)
+        # TODO: Run the deployed lambda (from aws/lambda/batch-zip-merlin-files.py)
