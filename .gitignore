@@ -12,3 +12,4 @@ __pycache__
 /app/static/*.min.js.map
 !.gitkeep
 *.zip
+s3/data
