@@ -536,3 +536,9 @@ def main(args: list[str]) -> None:
 
 if __name__ == "__main__":
     main(sys.argv[1:])
+
+
+def lambda_handler(event, context):
+    batch = event["Batch"]
+    packager = event["Packager"]
+    main([batch, packager])
