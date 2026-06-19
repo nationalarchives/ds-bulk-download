@@ -11,9 +11,7 @@ def get_merlin_files_manifest():
     Returns a list of all files in the Merlin directory.
     """
 
-    s3_endpoint = current_app.config.get("S3_ENDPOINT")
-    if not s3_endpoint:
-        raise ValueError("S3_ENDPOINT environment variable is not set.")
+    s3_endpoint = current_app.config.get("S3_ENDPOINT", None)
     s3_client = boto3.client("s3", endpoint_url=s3_endpoint)
     manifest_name = f"{current_app.config.get('S3_MERLIN_PREFIX')}/{current_app.config.get('S3_MANIFEST_NAME')}"
     content_object = s3_client.get_object(
