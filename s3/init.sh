@@ -17,7 +17,7 @@ for bucket in "${buckets[@]}"; do
 	mc mb local/"$bucket"
 	echo "Created bucket '$bucket'."
 
-	cat >/tmp/a-rw.json <<'EOF'
+	cat >/tmp/${bucket}-rw.json <<'EOF'
 {
 "Version": "2012-10-17",
 "Statement": [
