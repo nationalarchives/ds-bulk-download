@@ -234,10 +234,7 @@ class Packager:
             ]
         else:
             logger.debug(
-                f"-- Packager group mismatch: {existing_manifest.packager_group} != {self.packager_group}"
-            )
-            logger.debug(
-                "-- Removing all items from existing manifest due to packager group mismatch"
+                f"-- Removing all items from existing manifest due to packager group mismatch ({existing_manifest.packager_group} != {self.packager_group})"
             )
             items_to_keep = []
         new_items = self._generate_manifest_items(chunked_files)
