@@ -2,9 +2,8 @@ import json
 
 import boto3
 from flask import current_app
-from pydantic import TypeAdapter
 
-from tasks.process import BatchManifestItem
+from tasks.process import BatchManifest
 
 
 def get_merlin_files_manifest():
@@ -20,14 +19,10 @@ def get_merlin_files_manifest():
     content_object = s3_client.get_object(
         Bucket=current_app.config.get("S3_EXPORT_BUCKET"), Key=manifest_name
     )
-
     file_content = content_object.get("Body").read().decode("utf-8")
     json_content = json.loads(file_content)
-    downloads = TypeAdapter(list[BatchManifestItem])
-    downloads.validate_json(json.dumps(json_content))
 
-    json_content.sort(
-        key=lambda x: (x["year"], x["month"] or 0, x["week"] or 0), reverse=True
-    )
+    manifest = BatchManifest.validate(json_content)
+    manifest.items.sort(key=lambda x: (x.year, x.month or 0, x.week or 0), reverse=True)
 
-    return json_content
+    return manifest

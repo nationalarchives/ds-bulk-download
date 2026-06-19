@@ -26,7 +26,7 @@
         <p>The content will be updated as records are transferred to The National Archives and published on Discovery. Any content that has been redacted on the version that is available through Discovery will also be redacted on the version available through this bulk access service.</p>
 
         {%- set files = [] %}
-        {%- for item in manifest %}
+        {%- for item in manifest['items'] %}
           {% set ns = namespace(date='') %}
           {%- if item.year %}
             {%- if item.month %}
