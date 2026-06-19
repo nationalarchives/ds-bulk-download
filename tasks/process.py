@@ -17,6 +17,12 @@ if not logger.handlers:
     logger.setLevel(logging.DEBUG)
 
 
+class BatchManifest(BaseModel):
+    packager: str
+    created_timestamp: datetime = datetime.now()
+    items: list[dict]
+
+
 class BatchManifestItem(BaseModel):
     name: str
     size: int
@@ -37,6 +43,7 @@ class Packager:
     package_name: str
     source: Optional[str] = None
     s3_client: Optional[boto3.client] = None
+    scanned: bool
 
     def __init__(
         self,
@@ -48,6 +55,7 @@ class Packager:
             raise ValueError("package_name must be provided.")
         self.package_name = package_name
         self.files = []
+        self.scanned = False
         self.from_datetime = from_datetime
         self.to_datetime = to_datetime
         self.s3_export_bucket = os.environ.get("S3_EXPORT_BUCKET")
@@ -72,6 +80,7 @@ class Packager:
         logger.debug(f"Scanning source: {self.source}")
         s3_client = self._get_s3_client()
         self.files = s3_client.list_objects_v2(Bucket=self.source).get("Contents", [])
+        logger.debug(f"-- Found {len(self.files)} files in source")
         if self.from_datetime and self.to_datetime:
             self.files = [
                 file
@@ -88,6 +97,8 @@ class Packager:
             self.files = [
                 file for file in self.files if file["LastModified"] <= self.to_datetime
             ]
+        self.scanned = True
+        logger.debug(f"-- Found {len(self.files)} files after filtering by date range")
 
     def _chunk(self):
         logger.debug("Chunking files")
@@ -124,8 +135,11 @@ class Packager:
         self.manifest_name = manifest_name
         self.export_prefix = export_prefix
 
-        if not self.files:
+        if not self.scanned:
             raise ValueError("No files to process. Try running scan() first.")
+        if not self.files:
+            logger.debug("No files to process after scanning. Exiting.")
+            return
 
         existing_manifest = self._get_existing_manifest(
             f"{self.export_prefix}/{self.manifest_name}"
@@ -202,7 +216,14 @@ class ThisWeekPackager(Packager):
         to_datetime = (
             today_datetime + timedelta(days=6 - today_datetime.weekday())
         ).replace(hour=23, minute=59, second=59, microsecond=999999)
-        self.week_index = today_datetime.day // 7 + 1
+        mondays_this_month = [
+            (today_datetime.replace(day=1) + timedelta(days=i)).date()
+            for i in range(today_datetime.day)
+            if (today_datetime.replace(day=1) + timedelta(days=i)).weekday() == 0
+        ]
+        self.week_index = len(mondays_this_month)
+        if today_datetime.replace(day=1).weekday() != 0:
+            self.week_index += 1
         package_name = f"{today_datetime.strftime('%Y-%m')}-w{self.week_index}.zip"
         super().__init__(
             package_name=package_name,
