@@ -29,6 +29,7 @@ class BatchManifestItem(BaseModel):
 
 class BatchManifest(BaseModel):
     packager: str
+    packager_group: str
     updated: datetime = datetime.now()
     items: list[BatchManifestItem]
 
@@ -40,6 +41,7 @@ class FileBatch(BaseModel):
 
 class Packager:
     packager_name: Optional[str] = None
+    packager_group: Optional[str] = None
     manifest_name: Optional[str] = None
     export_name: str
     source: Optional[str] = None
@@ -141,13 +143,21 @@ class Packager:
             file_content = content_object.get("Body").read().decode("utf-8")
         except s3_client.exceptions.NoSuchKey:
             logger.debug(f"-- No existing manifest found for: {manifest_name}")
-            return BatchManifest(packager=self.packager_name, items=[])
+            return BatchManifest(
+                packager=self.packager_name,
+                packager_group=self.packager_group,
+                items=[],
+            )
         logger.debug(f"-- Existing manifest content: {file_content}")
         json_content = json.loads(file_content)
         items = TypeAdapter(list[BatchManifestItem]).validate_python(
             json_content["items"]
         )
-        return BatchManifest(packager=json_content["packager"], items=items)
+        return BatchManifest(
+            packager=json_content["packager"],
+            packager_group=json_content["packager_group"],
+            items=items,
+        )
 
     def process(
         self, manifest_name: str | None = None, export_prefix: str | None = None
@@ -213,17 +223,27 @@ class Packager:
         self, existing_manifest: BatchManifest, chunked_files: list[FileBatch]
     ) -> None:
         logger.debug("Post-processing tasks")
-        items_to_remove = self._manifest_items_to_remove(existing_manifest.items)
-        item_names_to_remove = [item.name for item in items_to_remove]
-        logger.debug(f"-- Items to remove from manifest: {item_names_to_remove}")
-        items_to_keep = [
-            item.model_dump(mode="json")
-            for item in existing_manifest.items
-            if item.name not in item_names_to_remove
-        ]
+        if existing_manifest.packager_group == self.packager_group:
+            items_to_remove = self._manifest_items_to_remove(existing_manifest.items)
+            item_names_to_remove = [item.name for item in items_to_remove]
+            logger.debug(f"-- Items to remove from manifest: {item_names_to_remove}")
+            items_to_keep = [
+                item.model_dump(mode="json")
+                for item in existing_manifest.items
+                if item.name not in item_names_to_remove
+            ]
+        else:
+            logger.debug(
+                f"-- Packager group mismatch: {existing_manifest.packager_group} != {self.packager_group}"
+            )
+            logger.debug(
+                "-- Removing all items from existing manifest due to packager group mismatch"
+            )
+            items_to_keep = []
         new_items = self._generate_manifest_items(chunked_files)
         new_manifest = BatchManifest(
             packager=self.packager_name,
+            packager_group=self.packager_group,
             items=items_to_keep + new_items,
         ).model_dump(mode="json")
         self._save_manifest(new_manifest)
@@ -243,6 +263,7 @@ class Packager:
 
 class ThisWeekPackager(Packager):
     packager_name = "this_week"
+    packager_group = "by_date"
 
     def __init__(self):
         today_datetime = datetime.now(timezone.utc)
@@ -297,6 +318,7 @@ class ThisWeekPackager(Packager):
 
 class AllWeeksThisMonthPackager(Packager):
     packager_name = "all_weeks_this_month"
+    packager_group = "by_date"
 
     # TODO: Implement this packager to handle all weeks of the current month
     def __init__(self):
@@ -315,6 +337,7 @@ class AllWeeksThisMonthPackager(Packager):
 
 class LastMonthPackager(Packager):
     packager_name = "last_month"
+    packager_group = "by_date"
 
     def __init__(self):
         today_datetime = datetime.now(timezone.utc)
@@ -369,13 +392,16 @@ class LastMonthPackager(Packager):
 
 class LastYearPackager(Packager):
     packager_name = "last_year"
+    packager_group = "by_date"
 
     def __init__(self):
-        today_datetime = datetime.now()
+        today_datetime = datetime.now(timezone.utc)
         today_year = today_datetime.year
         yesteryear = today_year - 1
-        from_datetime = datetime(yesteryear, 1, 1, 0, 0, 0, 0)
-        to_datetime = datetime(yesteryear, 12, 31, 23, 59, 59, 999999)
+        from_datetime = datetime(yesteryear, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+        to_datetime = datetime(
+            yesteryear, 12, 31, 23, 59, 59, 999999, tzinfo=timezone.utc
+        )
         export_name = f"{yesteryear}.zip"
         super().__init__(
             export_name=export_name,
@@ -409,6 +435,7 @@ class LastYearPackager(Packager):
 
 class AllPackager(Packager):
     packager_name = "all"
+    packager_group = "all"
 
     def __init__(self, *args, **kwargs):
         super().__init__(export_name="all.zip")
@@ -421,6 +448,7 @@ class AllPackager(Packager):
 
 class ChunkedPackager(AllPackager):
     packager_name = "chunked"
+    packager_group = "chunked"
 
     def __init__(self, *args, **kwargs):
         self.chunk_size = int(args[0]) if args else 10
