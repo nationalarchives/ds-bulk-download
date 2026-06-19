@@ -300,7 +300,6 @@ class AllWeeksThisMonthPackager(Packager):
 
     # TODO: Implement this packager to handle all weeks of the current month
     def __init__(self):
-        raise NotImplementedError("AllWeeksThisMonthPackager is not yet implemented.")
         today_datetime = datetime.now(timezone.utc)
         from_datetime = today_datetime.replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
@@ -311,6 +310,7 @@ class AllWeeksThisMonthPackager(Packager):
             from_datetime=from_datetime,
             to_datetime=today_datetime,
         )
+        raise NotImplementedError("AllWeeksThisMonthPackager is not yet implemented.")
 
 
 class LastMonthPackager(Packager):
