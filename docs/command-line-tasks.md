@@ -22,6 +22,6 @@ poetry run python tasks/process.py <batch> <packager> <options>
 
 ## Merlin
 
-- Run `last_year` at 01:00 on the first day of the year (cron `0 1 1 1 *`)
-- Run `last_month` at 02:00 on the first day of the month (cron `0 2 1 * *`)
-- Run `this_week` at 03:00 every day (cron `0 3 * * *`)
+- Run `last_year` at 01:00 on the first day of the year (cron `0 1 1 1 *` for `poetry run python tasks/process.py merlin last_year`)
+- Run `last_month` at 02:00 on the first day of the month (cron `0 2 1 * *` for `poetry run python tasks/process.py merlin last_month`)
+- Run `this_week` at 03:00 every day (cron `0 3 * * *` for `poetry run python tasks/process.py merlin this_week`)

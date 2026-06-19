@@ -157,7 +157,7 @@ class Packager:
                 zipper.writestr(file["Key"], infile_content)
         s3_client.put_object(
             Bucket=self.s3_export_bucket,
-            Key=f"{self.export_prefix}/{chunk.manifest_data.name}.zip",
+            Key=f"{self.export_prefix}/{chunk.manifest_data.name}",
             Body=zip_buffer.getvalue(),
         )
 
