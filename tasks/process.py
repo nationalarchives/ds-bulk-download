@@ -496,11 +496,11 @@ def main(args: list[str]) -> None:
     if len(args) < 1 or args[0] not in batches:
         logger.error("Please provide a batch as an argument.")
         logger.debug(f"Available batches: {', '.join(batches.keys())}")
-        exit(1)
+        sys.exit(1)
     if len(args) < 2 or args[1] not in packagers:
         logger.error("Please provide a packager as an argument.")
         logger.debug(f"Available packagers: {', '.join(packagers.keys())}")
-        exit(1)
+        sys.exit(1)
     extra_args = args[2:]
     logger.debug(f"Extra arguments: {extra_args}")
 
