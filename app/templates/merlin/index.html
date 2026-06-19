@@ -26,19 +26,30 @@
         <p>The content will be updated as records are transferred to The National Archives and published on Discovery. Any content that has been redacted on the version that is available through Discovery will also be redacted on the version available through this bulk access service.</p>
 
         {%- set files = [] %}
-        {% for file in manifest | sort(attribute='year,month,week', reverse=true) %}
-          {% set date = (file.year ~ '-' ~ ('%(month)02d' | format(month=file.month))) | pretty_date %}
+        {%- for item in manifest['items'] %}
+          {% set ns = namespace(date='') %}
+          {%- if item.year %}
+            {%- if item.month %}
+              {%- set ns.date = (item.year ~ '-' ~ ('%(month)02d' | format(month=item.month))) | pretty_date %}
+              {%- if item.week %}
+                {%- set ns.date = ns.date ~ ' (Week ' ~ item.week ~ ')' %}
+              {%- endif %}
+            {%- else %}
+              {%- set ns.date = item.year %}
+            {%- endif %}
+          {%- endif %}
           {%- do files.append({
             'id': 'merlin-file-' ~ loop.index,
-            'text': date ~ ' (Week ' ~ file.week ~ ')' if file.week else date,
-            'href': '#',
+            'text': ns.date,
+            'href': '#' ~ app_config['S3_HOST_URL'] ~ '/' ~ app_config['S3_MERLIN_PREFIX'] ~ '/' ~ item.name,
             'fileType': 'ZIP',
-            'fileSize': file.zip_size_bytes | pretty_file_size,
-            'fileExtent': ('{:,}'.format(file.file_count)) ~ ' files',
-            'description': 'Created ' ~ (file.created_timestamp | pretty_date),
+            'fileSize': item.size | pretty_file_size,
+            'fileExtent': ('{:,}'.format(item.file_count)) ~ ' files',
+            'description': 'Created ' ~ (item.created_timestamp | pretty_date),
             'icon': 'zipper'
           }) %}
-        {% endfor %}
+        {%- endfor %}
+
         {{ tnaFilesList({
           'itemHeadingLevel': 3,
           'items': files,

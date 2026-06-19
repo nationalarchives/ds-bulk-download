@@ -56,8 +56,13 @@ class Production(Features):
 
     GA4_ID: str = os.environ.get("GA4_ID", "")
 
-    S3_BUCKET_NAME: str = os.environ.get("S3_BUCKET_NAME", "")
-    S3_MANIFEST_FILENAME: str = os.environ.get("S3_MANIFEST_FILENAME", "")
+    S3_ENDPOINT: str = os.environ.get("S3_ENDPOINT", "")
+    S3_EXPORT_BUCKET: str = os.environ.get("S3_EXPORT_BUCKET", "")
+    S3_MANIFEST_NAME: str = os.environ.get("S3_MANIFEST_NAME", "manifest.json")
+    S3_MERLIN_PREFIX: str = os.environ.get("S3_MERLIN_PREFIX", "merlin")
+    S3_HOST_URL: str = os.environ.get(
+        "S3_HOST_URL", "https://bulk.nationalarchives.gov.uk"
+    ).rstrip("/")
 
 
 class Staging(Production):
