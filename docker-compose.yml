@@ -32,8 +32,7 @@ services:
   minio:
     image: quay.io/minio/minio
     ports:
-      - 65490:9000
-      - 65489:9001
+      - 65490:9001
     environment:
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: password123
@@ -61,3 +60,10 @@ services:
       - .:/docs
     ports:
       - 65492:8000
+
+  # create-lambda:
+  #   image: python:3.14@sha256:812b177f7c41214cbfa20a9cf13df476dab8f3012f811832d325feaa25bf7878
+  #   volumes:
+  #     - ./:/app
+  #   working_dir: /app
+  #   entrypoint: sh -c "apt-get -y update && apt-get -y install zip && sh ./tasks/create_lambda.sh"
