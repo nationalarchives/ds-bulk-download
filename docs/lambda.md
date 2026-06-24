@@ -25,9 +25,9 @@ See the [README.md](https://github.com/nationalarchives/ds-bulk-download/blob/ma
 Per-batch environment variables:
 
 - Merlin
-    - `S3_SOURCE_BUCKET_MERLIN`
-    - `S3_SOURCE_PREFIX_MERLIN` (optional)
-    - `S3_EXPORT_PREFIX_MERLIN` (optional)
+  - `S3_SOURCE_BUCKET_MERLIN`
+  - `S3_SOURCE_PREFIX_MERLIN` (optional)
+  - `S3_EXPORT_PREFIX_MERLIN` (optional)
 
 ### Event payload
 
