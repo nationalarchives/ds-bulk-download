@@ -469,6 +469,55 @@ class LastMonthPackager(Packager):
         ]
 
 
+class ThisMonthPackager(Packager):
+    packager_name = "this_month"
+    packager_group = "by_date"
+
+    def __init__(self):
+        today_datetime = datetime.now(timezone.utc)
+        from_datetime = today_datetime.replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+        to_datetime = (from_datetime + timedelta(days=32)).replace(day=1) - timedelta(
+            microseconds=1
+        )
+        export_filename = f"{from_datetime.strftime('%Y-%m')}.zip"
+        self.name = f"{from_datetime.strftime('%B %Y')}"
+        super().__init__(
+            export_filename=export_filename,
+            from_datetime=from_datetime,
+            to_datetime=to_datetime,
+        )
+
+    def _chunk(self) -> list[FileBatch]:
+        logger.debug("Chunking files")
+        chunk = FileBatch(
+            manifest_data=BatchManifestItem(
+                name=self.name,
+                file=f"{self.export_prefix}/{self.export_filename}"
+                if self.export_prefix
+                else self.export_filename,
+                total_size=sum(file["Size"] for file in self.files),
+                file_count=len(self.files),
+                created_timestamp=datetime.now(timezone.utc),
+                from_datetime=self.from_datetime,
+                to_datetime=self.to_datetime,
+            ),
+            files=self.files,
+        )
+        return [chunk]
+
+    def _manifest_items_to_remove(
+        self, existing_manifest_items: list[BatchManifestItem]
+    ) -> list[BatchManifestItem]:
+        return [
+            item
+            for item in existing_manifest_items
+            if item.from_datetime >= self.from_datetime
+            and item.to_datetime <= self.to_datetime
+        ]
+
+
 class AllMonthsThisYearPackager(Packager):
     packager_name = "all_months_this_year"
     packager_group = "by_date"
@@ -578,6 +627,55 @@ class LastYearPackager(Packager):
             for item in existing_manifest_items
             if item.from_datetime == self.from_datetime
             and item.to_datetime == self.to_datetime
+        ]
+
+
+class ThisYearPackager(Packager):
+    packager_name = "this_year"
+    packager_group = "by_date"
+
+    def __init__(self):
+        today_datetime = datetime.now(timezone.utc)
+        from_datetime = today_datetime.replace(
+            day=1, month=1, hour=0, minute=0, second=0, microsecond=0
+        )
+        to_datetime = today_datetime.replace(
+            day=31, month=12, hour=23, minute=59, second=59, microsecond=999999
+        )
+        export_filename = f"{today_datetime.year}.zip"
+        self.name = str(today_datetime.year)
+        super().__init__(
+            export_filename=export_filename,
+            from_datetime=from_datetime,
+            to_datetime=to_datetime,
+        )
+
+    def _chunk(self) -> list[FileBatch]:
+        logger.debug("Chunking files")
+        chunk = FileBatch(
+            manifest_data=BatchManifestItem(
+                name=self.name,
+                file=f"{self.export_prefix}/{self.export_filename}"
+                if self.export_prefix
+                else self.export_filename,
+                total_size=sum(file["Size"] for file in self.files),
+                file_count=len(self.files),
+                created_timestamp=datetime.now(timezone.utc),
+                from_datetime=self.from_datetime,
+                to_datetime=self.to_datetime,
+            ),
+            files=self.files,
+        )
+        return [chunk]
+
+    def _manifest_items_to_remove(
+        self, existing_manifest_items: list[BatchManifestItem]
+    ) -> list[BatchManifestItem]:
+        return [
+            item
+            for item in existing_manifest_items
+            if item.from_datetime >= self.from_datetime
+            and item.to_datetime <= self.to_datetime
         ]
 
 
@@ -759,9 +857,11 @@ def main(args: list[str]) -> None:
         "merlin": MerlinBatch,
     }
     packagers = {
-        LastYearPackager.packager_name: LastYearPackager,
-        LastMonthPackager.packager_name: LastMonthPackager,
         ThisWeekPackager.packager_name: ThisWeekPackager,
+        ThisMonthPackager.packager_name: ThisMonthPackager,
+        ThisYearPackager.packager_name: ThisYearPackager,
+        LastMonthPackager.packager_name: LastMonthPackager,
+        LastYearPackager.packager_name: LastYearPackager,
         AllWeeksThisMonthPackager.packager_name: AllWeeksThisMonthPackager,
         AllMonthsThisYearPackager.packager_name: AllMonthsThisYearPackager,
         AllPreviousYearsPackager.packager_name: AllPreviousYearsPackager,
