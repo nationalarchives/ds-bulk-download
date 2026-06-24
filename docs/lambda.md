@@ -33,5 +33,6 @@ Per-batch environment variables:
 
 - `Batch` - the preset name of the project to package, e.g. `merlin`
 - `Packager` - the type of packager you want to run, e.g. `all`, `chunked`, `last_month`...
+- `Options` (optional) - when using `"Packager": "chunked"` you can set `"Options": [500]` to export batches of 500 files
 
 Run `poetry run python tasks/process.py help` or check [process a batch using command line tasks](./command-line-tasks.md#process-a-batch) for more details on the `Batch` and `Packager` options available.

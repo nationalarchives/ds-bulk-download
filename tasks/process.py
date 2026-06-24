@@ -50,7 +50,7 @@ class Packager:
 
     def __init__(
         self,
-        export_name: str,
+        export_name: Optional[str] = "files.zip",
         from_datetime: Optional[datetime] = None,
         to_datetime: Optional[datetime] = None,
     ):
@@ -58,8 +58,6 @@ class Packager:
             raise ValueError(
                 "You cannot instantiate the base Packager class directly. Please use a subclass."
             )
-        if not export_name:
-            raise ValueError("export_name must be provided.")
         self.export_name = export_name
         self.files = []
         self.scanned = False
@@ -198,22 +196,24 @@ class Packager:
     def _zip_and_upload(self, chunk: FileBatch) -> None:
         logger.debug(f"Zipping and uploading chunk: {chunk.manifest_data.name}")
         s3_client = self._get_s3_client()
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zipper:
-            for file in chunk.files:
-                logger.debug(
-                    f"-- Adding S3 file to ZIP: {self.source[0]}/{file['Key']}"
-                )
-                infile_object = s3_client.get_object(
-                    Bucket=self.source[0], Key=file["Key"]
-                )
-                infile_content = infile_object["Body"].read()
-                zipper.writestr(file["Key"], infile_content)
-        s3_client.put_object(
-            Bucket=self.s3_export_bucket,
-            Key=chunk.manifest_data.name,
-            Body=zip_buffer.getvalue(),
-        )
+        with io.BytesIO(initial_bytes=b"") as zip_buffer:
+            with zipfile.ZipFile(
+                zip_buffer, "a", zipfile.ZIP_DEFLATED, False
+            ) as zipper:
+                for file in chunk.files:
+                    logger.debug(
+                        f"-- Adding S3 file to ZIP: {self.source[0]}/{file['Key']}"
+                    )
+                    infile_object = s3_client.get_object(
+                        Bucket=self.source[0], Key=file["Key"]
+                    )
+                    infile_content = infile_object["Body"].read()
+                    zipper.writestr(file["Key"], infile_content)
+            s3_client.put_object(
+                Bucket=self.s3_export_bucket,
+                Key=chunk.manifest_data.name,
+                Body=zip_buffer.getvalue(),
+            )
 
     def _generate_manifest_items(self, chunked_files: list[FileBatch]) -> list[dict]:
         return [chunk.manifest_data.model_dump(mode="json") for chunk in chunked_files]
@@ -458,8 +458,8 @@ class ChunkedPackager(AllPackager):
     packager_group = "chunked"
 
     def __init__(self, *args, **kwargs):
-        self.chunk_size = int(args[0]) if args else 10
-        super().__init__(export_name="all.zip")
+        self.chunk_size = int(args[0]) if args else 1000
+        super().__init__()
 
     def _chunk(self) -> list[FileBatch]:
         logger.debug(f"Chunking files into chunks of size: {self.chunk_size}")
@@ -470,9 +470,9 @@ class ChunkedPackager(AllPackager):
         return [
             FileBatch(
                 manifest_data=BatchManifestItem(
-                    name=f"{self.export_prefix}/{self.export_name}_{i}"
+                    name=f"{self.export_prefix}/all_{f'{(i + 1):04}'}.zip"
                     if self.export_prefix
-                    else f"{self.export_name}_{i}",
+                    else f"all_{f'{(i + 1):04}'}.zip",
                     size=sum(file["Size"] for file in chunk),
                     file_count=len(chunk),
                     created_timestamp=datetime.now(timezone.utc),
@@ -558,6 +558,13 @@ if __name__ == "__main__":
 
 
 def lambda_handler(event, context):
+    if "Batch" not in event:
+        raise ValueError("Event must contain 'Batch' key.")
+    if "Packager" not in event:
+        raise ValueError("Event must contain 'Packager' key.")
     batch = event["Batch"]
     packager = event["Packager"]
-    main([batch, packager])
+    options = event.get("Options", [])
+    if not isinstance(options, list):
+        raise ValueError("'Options' must be a list if provided.")
+    main([batch, packager] + options)
