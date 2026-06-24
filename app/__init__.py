@@ -53,7 +53,7 @@ def create_app(config_class):
                 "COOKIE_PREFERENCES_URL": app.config["COOKIE_PREFERENCES_URL"],
                 "GA4_ID": app.config["GA4_ID"],
                 "S3_HOST_URL": app.config["S3_HOST_URL"],
-                "S3_MERLIN_PREFIX": app.config["S3_MERLIN_PREFIX"],
+                "S3_EXPORT_PREFIX_MERLIN": app.config["S3_EXPORT_PREFIX_MERLIN"],
             },
             feature={},
         )

@@ -41,7 +41,7 @@
           {%- do files.append({
             'id': 'merlin-file-' ~ loop.index,
             'text': ns.date,
-            'href': '#' ~ app_config['S3_HOST_URL'] ~ '/' ~ app_config['S3_MERLIN_PREFIX'] ~ '/' ~ item.name,
+            'href': '#' ~ app_config['S3_HOST_URL'] ~ '/' ~ app_config['S3_EXPORT_PREFIX_MERLIN'] ~ '/' ~ item.name,
             'fileType': 'ZIP',
             'fileSize': item.size | pretty_file_size,
             'fileExtent': ('{:,}'.format(item.file_count)) ~ ' files',

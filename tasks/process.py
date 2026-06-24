@@ -91,12 +91,14 @@ class Packager:
                 break
             continuation_token = response.get("NextContinuationToken")
 
-    def scan(self, source: str = None) -> None:
+    def scan(self, source: tuple[str, Optional[str]] = None) -> None:
         if source is None:
             raise ValueError("Source must be provided for scanning.")
         self.source = source
         logger.debug(f"Scanning source: {self.source}")
-        self.files = list(self._get_all_s3_objects(Bucket=self.source))
+        self.files = list(
+            self._get_all_s3_objects(Bucket=self.source[0], Prefix=self.source[1])
+        )
         logger.debug(f"-- Found {len(self.files)} total files in source")
         if self.from_datetime and self.to_datetime:
             self.files = [
@@ -121,7 +123,9 @@ class Packager:
         logger.debug("Chunking files")
         chunk = FileBatch(
             manifest_data=BatchManifestItem(
-                name=self.export_name,
+                name=f"{self.export_prefix}/{self.export_name}"
+                if self.export_prefix
+                else self.export_name,
                 size=sum(file["Size"] for file in self.files),
                 file_count=len(self.files),
                 created_timestamp=datetime.now(timezone.utc),
@@ -197,15 +201,17 @@ class Packager:
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zipper:
             for file in chunk.files:
-                logger.debug(f"-- Adding S3 file to ZIP: {self.source}/{file['Key']}")
+                logger.debug(
+                    f"-- Adding S3 file to ZIP: {self.source[0]}/{file['Key']}"
+                )
                 infile_object = s3_client.get_object(
-                    Bucket=self.source, Key=file["Key"]
+                    Bucket=self.source[0], Key=file["Key"]
                 )
                 infile_content = infile_object["Body"].read()
                 zipper.writestr(file["Key"], infile_content)
         s3_client.put_object(
             Bucket=self.s3_export_bucket,
-            Key=f"{self.export_prefix}/{chunk.manifest_data.name}",
+            Key=chunk.manifest_data.name,
             Body=zip_buffer.getvalue(),
         )
 
@@ -287,7 +293,9 @@ class ThisWeekPackager(Packager):
         logger.debug("Chunking files")
         chunk = FileBatch(
             manifest_data=BatchManifestItem(
-                name=self.export_name,
+                name=f"{self.export_prefix}/{self.export_name}"
+                if self.export_prefix
+                else self.export_name,
                 size=sum(file["Size"] for file in self.files),
                 file_count=len(self.files),
                 year=self.from_datetime.year,
@@ -363,7 +371,9 @@ class LastMonthPackager(Packager):
         logger.debug("Chunking files")
         chunk = FileBatch(
             manifest_data=BatchManifestItem(
-                name=self.export_name,
+                name=f"{self.export_prefix}/{self.export_name}"
+                if self.export_prefix
+                else self.export_name,
                 size=sum(file["Size"] for file in self.files),
                 file_count=len(self.files),
                 year=self.from_datetime.year,
@@ -408,7 +418,9 @@ class LastYearPackager(Packager):
         logger.debug("Chunking files")
         chunk = FileBatch(
             manifest_data=BatchManifestItem(
-                name=self.export_name,
+                name=f"{self.export_prefix}/{self.export_name}"
+                if self.export_prefix
+                else self.export_name,
                 size=sum(file["Size"] for file in self.files),
                 file_count=len(self.files),
                 year=self.from_datetime.year,
@@ -458,7 +470,9 @@ class ChunkedPackager(AllPackager):
         return [
             FileBatch(
                 manifest_data=BatchManifestItem(
-                    name=f"{self.export_name}_{i}",
+                    name=f"{self.export_prefix}/{self.export_name}_{i}"
+                    if self.export_prefix
+                    else f"{self.export_name}_{i}",
                     size=sum(file["Size"] for file in chunk),
                     file_count=len(chunk),
                     created_timestamp=datetime.now(timezone.utc),
@@ -482,6 +496,10 @@ class Batch:
     def process(self) -> None:
         if not self.source:
             raise ValueError("No source has been defined for this batch.")
+        if not isinstance(self.source, tuple):
+            raise ValueError("Source must be a tuple of (bucket_name, prefix).")
+        if not self.source[0]:
+            raise ValueError("Source bucket name must be provided.")
         if not self.manifest_name:
             raise ValueError("No manifest_name has been defined for this batch.")
         if not self.prefix:
@@ -492,9 +510,12 @@ class Batch:
 
 
 class MerlinBatch(Batch):
-    source = os.environ.get("S3_MERLIN_SOURCE", "")
+    source = (
+        os.environ.get("S3_SOURCE_BUCKET_MERLIN", ""),
+        os.environ.get("S3_SOURCE_PREFIX_MERLIN", ""),
+    )
     manifest_name = os.environ.get("S3_MANIFEST_NAME", "manifest.json")
-    prefix = os.environ.get("S3_MERLIN_PREFIX", "merlin")
+    prefix = os.environ.get("S3_EXPORT_PREFIX_MERLIN", "merlin")
 
 
 def main(args: list[str]) -> None:
