@@ -16,7 +16,7 @@ poetry run python tasks/process.py <batch> <packager> <options>
 
 - `this_week` - create a ZIP of all files from this week, replacing any existing bundles for this week
 - `this_month` - create a ZIP of all files from this month, replacing all weekly files for the month
-- `this_year` - create a ZIP of all files from this month, replacing all weekly and monthly files for the year
+- `this_year` - create a ZIP of all files from this year, replacing all weekly and monthly files for the year
 - `last_month` - create a ZIP of all files from the previous month and remove any weekly ZIPs from that month
 - `last_year` - create a ZIP of all files from the previous year and remove any monthly ZIPs from that year
 - `all_weeks_this_month` - create multiple ZIPs, for every week this month
