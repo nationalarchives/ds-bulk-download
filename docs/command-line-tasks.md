@@ -14,9 +14,12 @@ poetry run python tasks/process.py <batch> <packager> <options>
 
 ### Packagers
 
-- `last_year` - create a ZIP of all files from the previous year and remove any monthly ZIPs from that year
-- `last_month` - create a ZIP of all files from the previous month and remove any weekly ZIPs from that month
 - `this_week` - create a ZIP of all files from this week, replacing any existing bundles for this week
+- `last_month` - create a ZIP of all files from the previous month and remove any weekly ZIPs from that month
+- `last_year` - create a ZIP of all files from the previous year and remove any monthly ZIPs from that year
+- `all_months_this_year` - create multiple ZIPs, for every month this year excluding the current month
+- `all_weeks_this_month` - create multiple ZIPs, for every week this month
+- `all_previous_years` - create multiple ZIPs, for every year prior to the current year
 - `all` - create a ZIP of all files
 - `chunked` - create multiple ZIPs, chunked into a set size which can be set by passing a number into the `<options>` parameter of the command
 - `sized` - create multiple ZIPs, chunked into a target file size which can be set by passing a number into the `<options>` parameter of the command (the file size of the chunk in bytes before writing to a ZIP file)

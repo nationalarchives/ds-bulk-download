@@ -20,7 +20,15 @@ def get_merlin_files_manifest():
     file_content = content_object.get("Body").read().decode("utf-8")
     json_content = json.loads(file_content)
 
-    manifest = BatchManifest.validate(json_content)
-    manifest.items.sort(key=lambda x: (x.year, x.month or 0, x.week or 0), reverse=True)
+    manifest = BatchManifest.validate(json_content).model_dump(mode="json")
+    manifest["items"] = [
+        {
+            **item,
+            "size": s3_client.head_object(
+                Bucket=current_app.config.get("S3_EXPORT_BUCKET"), Key=item["file"]
+            ).get("ContentLength", 0),
+        }
+        for item in manifest["items"]
+    ]
 
     return manifest

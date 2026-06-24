@@ -3,7 +3,7 @@ import os
 
 from flask import Flask
 from jinja2 import ChoiceLoader, PackageLoader
-from tna_utilities.datetime import pretty_date
+from tna_utilities.datetime import pretty_date, pretty_date_range
 from tna_utilities.number import pretty_file_size
 
 from app.lib.context_processor import cookie_preference, now_iso_8601
@@ -53,9 +53,9 @@ def create_app(config_class):
                 "COOKIE_PREFERENCES_URL": app.config["COOKIE_PREFERENCES_URL"],
                 "GA4_ID": app.config["GA4_ID"],
                 "S3_HOST_URL": app.config["S3_HOST_URL"],
-                "S3_EXPORT_PREFIX_MERLIN": app.config["S3_EXPORT_PREFIX_MERLIN"],
             },
             feature={},
+            pretty_date_range=pretty_date_range,
         )
 
     app.add_template_filter(pretty_date)

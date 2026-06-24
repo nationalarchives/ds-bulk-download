@@ -19,12 +19,12 @@ if not logger.handlers:
 
 class BatchManifestItem(BaseModel):
     name: str
-    size: int
+    file: str
+    total_size: int
     file_count: int
     created_timestamp: datetime
-    year: Optional[int] = None
-    month: Optional[int] = None
-    week: Optional[int] = None
+    from_datetime: Optional[datetime] = None
+    to_datetime: Optional[datetime] = None
 
 
 class BatchManifest(BaseModel):
@@ -43,14 +43,14 @@ class Packager:
     packager_name: Optional[str] = None
     packager_group: Optional[str] = None
     manifest_name: Optional[str] = None
-    export_name: str
+    export_filename: str
     source: Optional[str] = None
     s3_client: Optional[boto3.client] = None
     scanned: bool
 
     def __init__(
         self,
-        export_name: Optional[str] = "files.zip",
+        export_filename: Optional[str] = "all.zip",
         from_datetime: Optional[datetime] = None,
         to_datetime: Optional[datetime] = None,
     ):
@@ -58,7 +58,7 @@ class Packager:
             raise ValueError(
                 "You cannot instantiate the base Packager class directly. Please use a subclass."
             )
-        self.export_name = export_name
+        self.export_filename = export_filename
         self.files = []
         self.scanned = False
         self.from_datetime = from_datetime
@@ -98,6 +98,11 @@ class Packager:
             self._get_all_s3_objects(Bucket=self.source[0], Prefix=self.source[1])
         )
         logger.debug(f"-- Found {len(self.files)} total files in source")
+        # TODO: REMOVE AFTER TESTING
+        self.files = [
+            {**file, "LastModified": file["LastModified"] - timedelta(days=i * 45)}
+            for i, file in enumerate(self.files)
+        ]
         if self.from_datetime and self.to_datetime:
             self.files = [
                 file
@@ -121,12 +126,15 @@ class Packager:
         logger.debug("Chunking files")
         chunk = FileBatch(
             manifest_data=BatchManifestItem(
-                name=f"{self.export_prefix}/{self.export_name}"
+                name="All files",
+                file=f"{self.export_prefix}/{self.export_filename}"
                 if self.export_prefix
-                else self.export_name,
-                size=sum(file["Size"] for file in self.files),
+                else self.export_filename,
+                total_size=sum(file["Size"] for file in self.files),
                 file_count=len(self.files),
                 created_timestamp=datetime.now(timezone.utc),
+                from_datetime=self.from_datetime,
+                to_datetime=self.to_datetime,
             ),
             files=self.files,
         )
@@ -150,12 +158,16 @@ class Packager:
             )
         logger.debug(f"-- Existing manifest content: {file_content}")
         json_content = json.loads(file_content)
-        items = TypeAdapter(list[BatchManifestItem]).validate_python(
-            json_content["items"]
-        )
+        try:
+            items = TypeAdapter(list[BatchManifestItem]).validate_python(
+                json_content["items"]
+            )
+        except Exception as e:
+            logger.error(f"Error parsing manifest items: {e}")
+            items = []
         return BatchManifest(
-            packager=json_content["packager"],
-            packager_group=json_content["packager_group"],
+            packager=json_content.get("packager", self.packager_name),
+            packager_group=json_content.get("packager_group", self.packager_group),
             items=items,
         )
 
@@ -194,7 +206,9 @@ class Packager:
         self._post_process(existing_manifest, chunked_files)
 
     def _zip_and_upload(self, chunk: FileBatch) -> None:
-        logger.debug(f"Zipping and uploading chunk: {chunk.manifest_data.name}")
+        logger.debug(
+            f"Zipping and uploading chunk: {chunk.manifest_data.name} ({chunk.manifest_data.file})"
+        )
         s3_client = self._get_s3_client()
         with io.BytesIO(initial_bytes=b"") as zip_buffer:
             with zipfile.ZipFile(
@@ -211,7 +225,7 @@ class Packager:
                     zipper.writestr(file["Key"], infile_content)
             s3_client.put_object(
                 Bucket=self.s3_export_bucket,
-                Key=chunk.manifest_data.name,
+                Key=chunk.manifest_data.file,
                 Body=zip_buffer.getvalue(),
             )
 
@@ -221,7 +235,7 @@ class Packager:
     def _manifest_items_to_remove(
         self, existing_manifest_items: list[BatchManifestItem]
     ) -> list[BatchManifestItem]:
-        return []
+        return existing_manifest_items
 
     def _post_process(
         self, existing_manifest: BatchManifest, chunked_files: list[FileBatch]
@@ -282,9 +296,10 @@ class ThisWeekPackager(Packager):
         self.week_index = len(mondays_this_month)
         if today_datetime.replace(day=1).weekday() != 0:
             self.week_index += 1
-        export_name = f"{today_datetime.strftime('%Y-%m')}-w{self.week_index}.zip"
+        export_filename = f"{today_datetime.strftime('%Y-%m')}-w{self.week_index}.zip"
+        self.name = f"{today_datetime.strftime('%B %Y')}, week {self.week_index}"
         super().__init__(
-            export_name=export_name,
+            export_filename=export_filename,
             from_datetime=from_datetime,
             to_datetime=to_datetime,
         )
@@ -293,15 +308,15 @@ class ThisWeekPackager(Packager):
         logger.debug("Chunking files")
         chunk = FileBatch(
             manifest_data=BatchManifestItem(
-                name=f"{self.export_prefix}/{self.export_name}"
+                name=self.name,
+                file=f"{self.export_prefix}/{self.export_filename}"
                 if self.export_prefix
-                else self.export_name,
-                size=sum(file["Size"] for file in self.files),
+                else self.export_filename,
+                total_size=sum(file["Size"] for file in self.files),
                 file_count=len(self.files),
-                year=self.from_datetime.year,
-                month=self.from_datetime.month,
-                week=self.week_index,
                 created_timestamp=datetime.now(timezone.utc),
+                from_datetime=self.from_datetime,
+                to_datetime=self.to_datetime,
             ),
             files=self.files,
         )
@@ -313,9 +328,8 @@ class ThisWeekPackager(Packager):
         return [
             item
             for item in existing_manifest_items
-            if item.year == self.from_datetime.year
-            and item.month == self.from_datetime.month
-            and item.week == self.week_index
+            if item.from_datetime == self.from_datetime
+            and item.to_datetime == self.to_datetime
         ]
 
 
@@ -323,19 +337,77 @@ class AllWeeksThisMonthPackager(Packager):
     packager_name = "all_weeks_this_month"
     packager_group = "by_date"
 
-    # TODO: Implement this packager to handle all weeks of the current month
     def __init__(self):
         today_datetime = datetime.now(timezone.utc)
         from_datetime = today_datetime.replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
         )
-        export_name_prefix = f"{today_datetime.strftime('%Y-%m')}"
-        super().__init__(
-            export_name=export_name_prefix,
-            from_datetime=from_datetime,
-            to_datetime=today_datetime,
+        to_datetime = datetime(
+            from_datetime.year,
+            from_datetime.month,
+            (
+                (from_datetime + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+            ).day,
+            23,
+            59,
+            59,
+            999999,
+            tzinfo=timezone.utc,
         )
-        raise NotImplementedError("AllWeeksThisMonthPackager is not yet implemented.")
+        super().__init__(from_datetime=from_datetime, to_datetime=to_datetime)
+
+    def _chunk(self) -> list[FileBatch]:
+        logger.debug("Chunking files")
+        today_datetime = datetime.now(timezone.utc)
+        mondays_this_month = [
+            (today_datetime.replace(day=1) + timedelta(days=i)).date()
+            for i in range(today_datetime.day)
+            if (today_datetime.replace(day=1) + timedelta(days=i)).weekday() == 0
+        ]
+        self.week_index = len(mondays_this_month)
+        if today_datetime.replace(day=1).weekday() != 0:
+            self.week_index += 1
+        chunks = []
+        for week_index, week in enumerate(mondays_this_month, start=1):
+            week_start = today_datetime.replace(
+                day=week.day, hour=0, minute=0, second=0, microsecond=0
+            )
+            week_end = (week_start + timedelta(days=6)).replace(
+                hour=23, minute=59, second=59, microsecond=999999
+            )
+            files = [
+                file
+                for file in self.files
+                if week_start <= file["LastModified"] <= week_end
+            ]
+            if not files:
+                continue
+            chunk = FileBatch(
+                manifest_data=BatchManifestItem(
+                    name=f"{today_datetime.strftime('%B %Y')}, week {week_index}",
+                    file=f"{self.export_prefix}/{today_datetime.strftime('%Y-%m')}-w{week_index}.zip"
+                    if self.export_prefix
+                    else f"{today_datetime.strftime('%Y-%m')}-w{week_index}.zip",
+                    total_size=sum(file["Size"] for file in files),
+                    file_count=len(files),
+                    created_timestamp=datetime.now(timezone.utc),
+                    from_datetime=week_start,
+                    to_datetime=week_end,
+                ),
+                files=files,
+            )
+            chunks.append(chunk)
+        return chunks
+
+    def _manifest_items_to_remove(
+        self, existing_manifest_items: list[BatchManifestItem]
+    ) -> list[BatchManifestItem]:
+        return [
+            item
+            for item in existing_manifest_items
+            if item.from_datetime >= self.from_datetime
+            and item.to_datetime <= self.to_datetime
+        ]
 
 
 class LastMonthPackager(Packager):
@@ -360,9 +432,10 @@ class LastMonthPackager(Packager):
             999999,
             tzinfo=timezone.utc,
         )
-        export_name = f"{last_month.strftime('%Y-%m')}.zip"
+        export_filename = f"{last_month.strftime('%Y-%m')}.zip"
+        self.name = f"{last_month.strftime('%B %Y')}"
         super().__init__(
-            export_name=export_name,
+            export_filename=export_filename,
             from_datetime=from_datetime,
             to_datetime=to_datetime,
         )
@@ -371,14 +444,15 @@ class LastMonthPackager(Packager):
         logger.debug("Chunking files")
         chunk = FileBatch(
             manifest_data=BatchManifestItem(
-                name=f"{self.export_prefix}/{self.export_name}"
+                name=self.name,
+                file=f"{self.export_prefix}/{self.export_filename}"
                 if self.export_prefix
-                else self.export_name,
-                size=sum(file["Size"] for file in self.files),
+                else self.export_filename,
+                total_size=sum(file["Size"] for file in self.files),
                 file_count=len(self.files),
-                year=self.from_datetime.year,
-                month=self.from_datetime.month,
                 created_timestamp=datetime.now(timezone.utc),
+                from_datetime=self.from_datetime,
+                to_datetime=self.to_datetime,
             ),
             files=self.files,
         )
@@ -390,8 +464,71 @@ class LastMonthPackager(Packager):
         return [
             item
             for item in existing_manifest_items
-            if item.year == self.from_datetime.year
-            and item.month == self.from_datetime.month
+            if item.from_datetime == self.from_datetime
+            and item.to_datetime == self.to_datetime
+        ]
+
+
+class AllMonthsThisYearPackager(Packager):
+    packager_name = "all_months_this_year"
+    packager_group = "by_date"
+
+    def __init__(self):
+        today_datetime = datetime.now(timezone.utc)
+        from_datetime = today_datetime.replace(
+            day=1, month=1, hour=0, minute=0, second=0, microsecond=0
+        )
+        to_datetime = from_datetime.replace(
+            month=12, day=31, hour=23, minute=59, second=59, microsecond=999999
+        )
+        super().__init__(from_datetime=from_datetime, to_datetime=to_datetime)
+
+    def _chunk(self) -> list[FileBatch]:
+        logger.debug("Chunking files")
+        chunks = []
+        today_datetime = datetime.now(timezone.utc)
+        for month in range(1, today_datetime.month):
+            month_start = today_datetime.replace(
+                day=1, month=month, hour=0, minute=0, second=0, microsecond=0
+            )
+            month_end = (month_start + timedelta(days=31)).replace(day=1) - timedelta(
+                days=1
+            )
+            month_end = month_end.replace(
+                hour=23, minute=59, second=59, microsecond=999999
+            )
+            files = [
+                file
+                for file in self.files
+                if month_start <= file["LastModified"] <= month_end
+            ]
+            if not files:
+                continue
+            chunk = FileBatch(
+                manifest_data=BatchManifestItem(
+                    name=f"{month_start.strftime('%B %Y')}",
+                    file=f"{self.export_prefix}/{month_start.strftime('%Y-%m')}.zip"
+                    if self.export_prefix
+                    else f"{month_start.strftime('%Y-%m')}.zip",
+                    total_size=sum(file["Size"] for file in files),
+                    file_count=len(files),
+                    created_timestamp=datetime.now(timezone.utc),
+                    from_datetime=month_start,
+                    to_datetime=month_end,
+                ),
+                files=files,
+            )
+            chunks.append(chunk)
+        return chunks
+
+    def _manifest_items_to_remove(
+        self, existing_manifest_items: list[BatchManifestItem]
+    ) -> list[BatchManifestItem]:
+        return [
+            item
+            for item in existing_manifest_items
+            if item.from_datetime >= self.from_datetime
+            and item.to_datetime <= self.to_datetime
         ]
 
 
@@ -407,9 +544,10 @@ class LastYearPackager(Packager):
         to_datetime = datetime(
             yesteryear, 12, 31, 23, 59, 59, 999999, tzinfo=timezone.utc
         )
-        export_name = f"{yesteryear}.zip"
+        export_filename = f"{yesteryear}.zip"
+        self.name = str(yesteryear)
         super().__init__(
-            export_name=export_name,
+            export_filename=export_filename,
             from_datetime=from_datetime,
             to_datetime=to_datetime,
         )
@@ -418,13 +556,15 @@ class LastYearPackager(Packager):
         logger.debug("Chunking files")
         chunk = FileBatch(
             manifest_data=BatchManifestItem(
-                name=f"{self.export_prefix}/{self.export_name}"
+                name=self.name,
+                file=f"{self.export_prefix}/{self.export_filename}"
                 if self.export_prefix
-                else self.export_name,
-                size=sum(file["Size"] for file in self.files),
+                else self.export_filename,
+                total_size=sum(file["Size"] for file in self.files),
                 file_count=len(self.files),
-                year=self.from_datetime.year,
                 created_timestamp=datetime.now(timezone.utc),
+                from_datetime=self.from_datetime,
+                to_datetime=self.to_datetime,
             ),
             files=self.files,
         )
@@ -436,21 +576,69 @@ class LastYearPackager(Packager):
         return [
             item
             for item in existing_manifest_items
-            if item.year == self.from_datetime.year
+            if item.from_datetime == self.from_datetime
+            and item.to_datetime == self.to_datetime
+        ]
+
+
+class AllPreviousYearsPackager(Packager):
+    packager_name = "all_previous_years"
+    packager_group = "by_date"
+
+    def __init__(self):
+        today_datetime = datetime.now(timezone.utc)
+        to_datetime = today_datetime.replace(day=1, month=1) - timedelta(days=1)
+        super().__init__(to_datetime=to_datetime)
+
+    def _chunk(self) -> list[FileBatch]:
+        logger.debug("Chunking files")
+        chunks = []
+        this_year = datetime.now(timezone.utc).year
+        years = set(file["LastModified"].year for file in self.files)
+        years = [year for year in years if year < this_year]
+        for year in sorted(years, reverse=True):
+            if year >= this_year:
+                continue
+            print(f"Processing year: {year}")
+            year_start = datetime(year, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+            year_end = datetime(year, 12, 31, 23, 59, 59, 999999, tzinfo=timezone.utc)
+            files = [
+                file
+                for file in self.files
+                if year_start <= file["LastModified"] <= year_end
+            ]
+            if not files:
+                continue
+            chunk = FileBatch(
+                manifest_data=BatchManifestItem(
+                    name=f"{year_start.strftime('%Y')}",
+                    file=f"{self.export_prefix}/{year_start.strftime('%Y')}.zip"
+                    if self.export_prefix
+                    else f"{year_start.strftime('%Y')}.zip",
+                    total_size=sum(file["Size"] for file in files),
+                    file_count=len(files),
+                    created_timestamp=datetime.now(timezone.utc),
+                    from_datetime=year_start,
+                    to_datetime=year_end,
+                ),
+                files=files,
+            )
+            chunks.append(chunk)
+        return chunks
+
+    def _manifest_items_to_remove(
+        self, existing_manifest_items: list[BatchManifestItem]
+    ) -> list[BatchManifestItem]:
+        return [
+            item
+            for item in existing_manifest_items
+            if item.to_datetime <= self.to_datetime
         ]
 
 
 class AllPackager(Packager):
     packager_name = "all"
     packager_group = "all"
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(export_name="all.zip")
-
-    def _manifest_items_to_remove(
-        self, existing_manifest_items: list[BatchManifestItem]
-    ) -> list[BatchManifestItem]:
-        return existing_manifest_items
 
 
 class ChunkedPackager(AllPackager):
@@ -470,12 +658,15 @@ class ChunkedPackager(AllPackager):
         return [
             FileBatch(
                 manifest_data=BatchManifestItem(
-                    name=f"{self.export_prefix}/all_{f'{(i + 1):04}'}.zip"
+                    name=f"Batch {(i + 1)} of {len(file_chunks)}",
+                    file=f"{self.export_prefix}/all_{f'{(i + 1):04}'}.zip"
                     if self.export_prefix
                     else f"all_{f'{(i + 1):04}'}.zip",
-                    size=sum(file["Size"] for file in chunk),
+                    total_size=sum(file["Size"] for file in chunk),
                     file_count=len(chunk),
                     created_timestamp=datetime.now(timezone.utc),
+                    from_datetime=self.from_datetime,
+                    to_datetime=self.to_datetime,
                 ),
                 files=chunk,
             )
@@ -512,12 +703,15 @@ class SizedPackager(AllPackager):
         return [
             FileBatch(
                 manifest_data=BatchManifestItem(
-                    name=f"{self.export_prefix}/all_{f'{(i + 1):04}'}.zip"
+                    name=f"Batch {(i + 1)} of {len(file_chunks)}",
+                    file=f"{self.export_prefix}/all_{f'{(i + 1):04}'}.zip"
                     if self.export_prefix
                     else f"all_{f'{(i + 1):04}'}.zip",
-                    size=sum(file["Size"] for file in chunk),
+                    total_size=sum(file["Size"] for file in chunk),
                     file_count=len(chunk),
                     created_timestamp=datetime.now(timezone.utc),
+                    from_datetime=self.from_datetime,
+                    to_datetime=self.to_datetime,
                 ),
                 files=chunk,
             )
@@ -569,6 +763,8 @@ def main(args: list[str]) -> None:
         LastMonthPackager.packager_name: LastMonthPackager,
         ThisWeekPackager.packager_name: ThisWeekPackager,
         AllWeeksThisMonthPackager.packager_name: AllWeeksThisMonthPackager,
+        AllMonthsThisYearPackager.packager_name: AllMonthsThisYearPackager,
+        AllPreviousYearsPackager.packager_name: AllPreviousYearsPackager,
         AllPackager.packager_name: AllPackager,
         ChunkedPackager.packager_name: ChunkedPackager,
         SizedPackager.packager_name: SizedPackager,
