@@ -3,7 +3,7 @@ import os
 
 from flask import Flask
 from jinja2 import ChoiceLoader, PackageLoader
-from tna_utilities.datetime import pretty_date, pretty_date_range
+from tna_utilities.datetime import pretty_date, pretty_date_range, pretty_datetime
 from tna_utilities.number import pretty_file_size
 
 from app.lib.context_processor import cookie_preference, now_iso_8601
@@ -59,6 +59,7 @@ def create_app(config_class):
         )
 
     app.add_template_filter(pretty_date)
+    app.add_template_filter(pretty_datetime)
     app.add_template_filter(pretty_file_size)
     app.add_template_filter(slugify)
 

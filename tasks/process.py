@@ -99,10 +99,10 @@ class Packager:
         )
         logger.debug(f"-- Found {len(self.files)} total files in source")
         # TODO: REMOVE AFTER TESTING
-        self.files = [
-            {**file, "LastModified": file["LastModified"] - timedelta(days=i * 45)}
-            for i, file in enumerate(self.files)
-        ]
+        # self.files = [
+        #     {**file, "LastModified": file["LastModified"] - timedelta(hours=2**i)}
+        #     for i, file in enumerate(self.files)
+        # ]
         if self.from_datetime and self.to_datetime:
             self.files = [
                 file

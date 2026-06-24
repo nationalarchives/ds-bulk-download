@@ -27,6 +27,10 @@
 
         {%- set files = [] %}
         {%- for item in manifest['items'] | sort(attribute='created_timestamp,name') | sort(attribute='from_datetime', reverse=True) %}
+          {%- set description = 'Updated: ' ~ (item.created_timestamp | pretty_datetime) %}
+          {%- if item.from_datetime and item.to_datetime %}
+            {%- set description = description ~ '<br>Covering: ' ~ (pretty_date_range(item.from_datetime, item.to_datetime)) %}
+          {%- endif %}
           {%- do files.append({
             'id': 'merlin-file-' ~ loop.index,
             'text': item.name,
@@ -34,7 +38,7 @@
             'fileType': 'ZIP',
             'fileSize': (item.file_size or item.total_size) | pretty_file_size,
             'fileExtent': ('{:,}'.format(item.file_count)) ~ ' file' ~ ('s' if item.file_count != 1 else ''),
-            'description': 'Created ' ~ (item.created_timestamp | pretty_date) ~ (', covering ' ~ (pretty_date_range(item.from_datetime, item.to_datetime)) if item.from_datetime and item.to_datetime else ''),
+            'description': description | safe,
             'icon': 'zipper'
           }) %}
         {%- endfor %}
