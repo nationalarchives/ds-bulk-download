@@ -462,11 +462,53 @@ class ChunkedPackager(AllPackager):
         super().__init__()
 
     def _chunk(self) -> list[FileBatch]:
-        logger.debug(f"Chunking files into chunks of size: {self.chunk_size}")
+        logger.debug(f"Chunking files into chunks of {self.chunk_size} files")
         file_chunks = [
             self.files[i : i + self.chunk_size]
             for i in range(0, len(self.files), self.chunk_size)
         ]
+        return [
+            FileBatch(
+                manifest_data=BatchManifestItem(
+                    name=f"{self.export_prefix}/all_{f'{(i + 1):04}'}.zip"
+                    if self.export_prefix
+                    else f"all_{f'{(i + 1):04}'}.zip",
+                    size=sum(file["Size"] for file in chunk),
+                    file_count=len(chunk),
+                    created_timestamp=datetime.now(timezone.utc),
+                ),
+                files=chunk,
+            )
+            for i, chunk in enumerate(file_chunks)
+        ]
+
+
+class SizedPackager(AllPackager):
+    packager_name = "sized"
+    packager_group = "sized"
+
+    def __init__(self, *args, **kwargs):
+        self.chunk_size = int(args[0]) if args else 100000
+        super().__init__()
+
+    def _chunk(self) -> list[FileBatch]:
+        logger.debug(f"Chunking files into chunks of file size {self.chunk_size} bytes")
+        file_chunks = []
+        current_chunk = []
+        current_sum = 0
+        for file in self.files:
+            size = file["Size"]
+            if current_sum + size <= self.chunk_size or (
+                not current_chunk and size > self.chunk_size
+            ):
+                current_chunk.append(file)
+                current_sum += size
+            else:
+                file_chunks.append(current_chunk)
+                current_chunk = [file]
+                current_sum = size
+        if current_chunk:
+            file_chunks.append(current_chunk)
         return [
             FileBatch(
                 manifest_data=BatchManifestItem(
@@ -529,6 +571,7 @@ def main(args: list[str]) -> None:
         AllWeeksThisMonthPackager.packager_name: AllWeeksThisMonthPackager,
         AllPackager.packager_name: AllPackager,
         ChunkedPackager.packager_name: ChunkedPackager,
+        SizedPackager.packager_name: SizedPackager,
     }
 
     if len(args) < 1 or args[0] == "help":

@@ -19,6 +19,7 @@ poetry run python tasks/process.py <batch> <packager> <options>
 - `this_week` - create a ZIP of all files from this week, replacing any existing bundles for this week
 - `all` - create a ZIP of all files
 - `chunked` - create multiple ZIPs, chunked into a set size which can be set by passing a number into the `<options>` parameter of the command
+- `sized` - create multiple ZIPs, chunked into a target file size which can be set by passing a number into the `<options>` parameter of the command (the file size of the chunk in bytes before writing to a ZIP file)
 
 ## Merlin
 
