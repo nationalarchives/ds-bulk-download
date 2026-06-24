@@ -34,4 +34,4 @@ Per-batch environment variables:
 - `Batch` - the preset name of the project to package, e.g. `merlin`
 - `Packager` - the type of packager you want to run, e.g. `all`, `chunked`, `last_month`...
 
-Run `poetry run python tasks/process.py help` for more details on the `Batch` and `Packager` options available.
+Run `poetry run python tasks/process.py help` or check [process a batch using command line tasks](./command-line-tasks.md#process-a-batch) for more details on the `Batch` and `Packager` options available.
