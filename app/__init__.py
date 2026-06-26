@@ -12,7 +12,7 @@ from app.lib.template_filters import slugify
 
 
 def create_app(config_class):
-    app = Flask(__name__, static_url_path="/bulkdownload/static")
+    app = Flask(__name__, static_url_path="/bulk-download/static")
     app.config.from_object(config_class)
 
     gunicorn_error_logger = logging.getLogger("gunicorn.error")
