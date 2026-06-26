@@ -10,7 +10,7 @@ def index():
     return render_template("main/index.html")
 
 
-@bp.route("/merlin-new/")
+@bp.route("/merlin/")
 @cacheable_duration(3600)
 def merlin():
     try:
