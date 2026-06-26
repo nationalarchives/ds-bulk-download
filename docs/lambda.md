@@ -8,7 +8,7 @@ There are two ways to create the Lambda:
 # 1. Run the creation script directly
 ./tasks/create_lambda.sh
 
-# 2. Build the Lambda in Docker
+# 2. Build the Lambda in Docker (might be disabled in docker-compose.yml)
 docker compose up -d create-lambda
 ```
 
