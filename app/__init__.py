@@ -12,7 +12,7 @@ from app.lib.template_filters import slugify
 
 
 def create_app(config_class):
-    app = Flask(__name__, static_url_path="/static/merlin")
+    app = Flask(__name__, static_url_path="/bulkdownload/static")
     app.config.from_object(config_class)
 
     gunicorn_error_logger = logging.getLogger("gunicorn.error")
@@ -65,10 +65,8 @@ def create_app(config_class):
 
     from .healthcheck import bp as healthcheck_bp
     from .main import bp as site_bp
-    from .merlin import bp as merlin_bp
 
     app.register_blueprint(healthcheck_bp, url_prefix="/healthcheck")
-    app.register_blueprint(merlin_bp, url_prefix="/merlin")
     app.register_blueprint(site_bp)
 
     return app
