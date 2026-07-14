@@ -73,7 +73,11 @@ class Packager:
     def _get_s3_client(self) -> boto3.client:
         if not self.s3_client:
             s3_endpoint = os.environ.get("S3_ENDPOINT", None)
-            self.s3_client = boto3.client("s3", endpoint_url=s3_endpoint)
+            self.s3_client = boto3.client(
+                "s3",
+                region_name=os.environ.get("AWS_DEFAULT_REGION", "eu-west-2"),
+                endpoint_url=s3_endpoint,
+            )
         return self.s3_client
 
     def _get_all_s3_objects(self, **base_kwargs) -> list[dict]:

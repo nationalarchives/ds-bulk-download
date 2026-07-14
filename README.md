@@ -60,6 +60,7 @@ In addition to the [base Docker image variables](https://github.com/nationalarch
 | `CSP_REPORT_URI`          | The URL to report CSP violations to                                  | _none_                                 |
 | `FORCE_HTTPS`             | Redirect requests to HTTPS as part of the CSP                        | _none_                                 |
 | `GA4_ID`                  | The Google Analytics 4 ID                                            | _none_                                 |
+| `AWS_DEFAULT_REGION`      | The default AWS region                                               | `eu-west-2`                            |
 | `S3_EXPORT_BUCKET`        | The S3 bucket where the ZIP files and manifest should be uploaded to | _none_                                 |
 | `S3_EXPORT_PREFIX_MERLIN` | The S3 bucket folder for the Merlin files and manifest               | `merlin`                               |
 | `S3_MANIFEST_NAME`        | The S3 location of the Merlin files manifest                         | `manifest.json`                        |
