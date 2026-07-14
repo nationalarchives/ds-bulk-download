@@ -61,8 +61,8 @@ class Production(Features):
     S3_EXPORT_BUCKET: str = os.environ.get("S3_EXPORT_BUCKET", "")
     S3_EXPORT_PREFIX_MERLIN: str = os.environ.get("S3_EXPORT_PREFIX_MERLIN", "merlin")
     S3_MANIFEST_NAME: str = os.environ.get("S3_MANIFEST_NAME", "manifest.json")
-    S3_HOST_URL: str = os.environ.get(
-        "S3_HOST_URL", "https://bulk.nationalarchives.gov.uk"
+    S3_EXPORT_BUCKET_HOST_URL: str = os.environ.get(
+        "S3_EXPORT_BUCKET_HOST_URL", "https://download.nationalarchives.gov.uk"
     ).rstrip("/")
 
 
