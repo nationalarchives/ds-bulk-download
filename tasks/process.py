@@ -934,6 +934,7 @@ def main(args: list[str]) -> None:
             f"Available packagers: {', '.join(list(packagers.keys()) + [all_timed_packagers_name])}"
         )
         sys.exit(1)
+
     extra_args = args[2:]
     logger.debug(f"Extra arguments: {extra_args}")
 
