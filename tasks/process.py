@@ -925,6 +925,7 @@ def main(args: list[str]) -> None:
         logger.error("Please provide a batch as an argument.")
         logger.debug(f"Available batches: {', '.join(batches.keys())}")
         sys.exit(1)
+
     if len(args) < 2 or (
         args[1] not in packagers and not args[1] == all_timed_packagers_name
     ):
