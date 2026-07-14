@@ -936,19 +936,23 @@ def main(args: list[str]) -> None:
     extra_args = args[2:]
     logger.debug(f"Extra arguments: {extra_args}")
 
+    batch_class = batches[args[0]]
+    batches = []
     if args[1] == all_timed_packagers_name:
         timed_packagers = [
             AllPreviousYearsPackager,
             AllMonthsThisYearPackager,
             AllWeeksThisMonthPackager,
         ]
-        for packager_class in timed_packagers:
-            batch_class = batches[args[0]]
-            batch = batch_class(packager_class=packager_class, extra_args=extra_args)
-            batch.process()
+        batches = [
+            batch_class(packager_class=packager_class, extra_args=extra_args)
+            for packager_class in timed_packagers
+        ]
     else:
-        batch_class = batches[args[0]]
-        batch = batch_class(packager_class=packagers[args[1]], extra_args=extra_args)
+        batches = [
+            batch_class(packager_class=packagers[args[1]], extra_args=extra_args)
+        ]
+    for batch in batches:
         batch.process()
 
 
