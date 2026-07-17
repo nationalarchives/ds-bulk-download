@@ -1,7 +1,7 @@
+import argparse
 import json
 import logging
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from stat import S_IFREG
 from typing import Optional
@@ -895,71 +895,64 @@ class MerlinBatch(Batch):
     prefix = os.environ.get("S3_EXPORT_PREFIX_MERLIN", "merlin")
 
 
-def main(args: list[str]) -> None:
-    batches = {
-        "merlin": MerlinBatch,
-    }
-    packagers = {
-        ThisWeekPackager.packager_name: ThisWeekPackager,
-        ThisMonthPackager.packager_name: ThisMonthPackager,
-        ThisYearPackager.packager_name: ThisYearPackager,
-        LastMonthPackager.packager_name: LastMonthPackager,
-        LastYearPackager.packager_name: LastYearPackager,
-        AllWeeksThisMonthPackager.packager_name: AllWeeksThisMonthPackager,
-        AllMonthsThisYearPackager.packager_name: AllMonthsThisYearPackager,
-        AllPreviousYearsPackager.packager_name: AllPreviousYearsPackager,
-        AllPackager.packager_name: AllPackager,
-        ChunkedPackager.packager_name: ChunkedPackager,
-        SizedPackager.packager_name: SizedPackager,
-    }
+batches = {
+    "merlin": MerlinBatch,
+}
+packagers = {
+    ThisWeekPackager.packager_name: ThisWeekPackager,
+    ThisMonthPackager.packager_name: ThisMonthPackager,
+    ThisYearPackager.packager_name: ThisYearPackager,
+    LastMonthPackager.packager_name: LastMonthPackager,
+    LastYearPackager.packager_name: LastYearPackager,
+    AllWeeksThisMonthPackager.packager_name: AllWeeksThisMonthPackager,
+    AllMonthsThisYearPackager.packager_name: AllMonthsThisYearPackager,
+    AllPreviousYearsPackager.packager_name: AllPreviousYearsPackager,
+    AllPackager.packager_name: AllPackager,
+    ChunkedPackager.packager_name: ChunkedPackager,
+    SizedPackager.packager_name: SizedPackager,
+}
+all_timed_packagers_name = "all_year_month_week"
 
-    all_timed_packagers_name = "all_year_month_week"
 
-    if len(args) < 1 or args[0] == "help":
-        logger.debug("Usage: python process.py <batch> <packager>")
-        logger.debug(f"  Available batches: {', '.join(batches.keys())}")
-        logger.debug(f"  Available packagers: {', '.join(packagers.keys())}")
-        return
-
-    if len(args) < 1 or args[0] not in batches:
-        logger.error("Please provide a batch as an argument.")
-        logger.debug(f"Available batches: {', '.join(batches.keys())}")
-        sys.exit(1)
-
-    if len(args) < 2 or (
-        args[1] not in packagers and not args[1] == all_timed_packagers_name
-    ):
-        logger.error("Please provide a packager as an argument.")
-        logger.debug(
-            f"Available packagers: {', '.join(list(packagers.keys()) + [all_timed_packagers_name])}"
-        )
-        sys.exit(1)
-
-    extra_args = args[2:]
-    logger.debug(f"Extra arguments: {extra_args}")
-
-    batch_class = batches[args[0]]
-    batches = []
-    if args[1] == all_timed_packagers_name:
+def main(batch, packager, extra_args) -> None:
+    print(
+        f"Processing batch: {batch} with packager: {packager} and extra_args: {extra_args}"
+    )
+    batch_class = batches[batch]
+    batches_to_process = []
+    if packager == all_timed_packagers_name:
         timed_packagers = [
             AllPreviousYearsPackager,
             AllMonthsThisYearPackager,
             AllWeeksThisMonthPackager,
         ]
-        batches = [
+        batches_to_process = [
             batch_class(packager_class=packager_class, extra_args=extra_args)
             for packager_class in timed_packagers
         ]
     else:
-        batches = [
-            batch_class(packager_class=packagers[args[1]], extra_args=extra_args)
+        batches_to_process = [
+            batch_class(packager_class=packagers[packager], extra_args=extra_args)
         ]
-    for batch in batches:
+    for batch in batches_to_process:
         batch.process()
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "batch", help="The batch to process", choices=list(batches.keys())
+    )
+    parser.add_argument(
+        "packager",
+        help="The packager to use",
+        choices=list(packagers.keys()) + [all_timed_packagers_name],
+    )
+    parser.add_argument(
+        "options", nargs="*", help="Additional options for the packager"
+    )
+    args = parser.parse_args()
+    main(args.batch, args.packager, args.options)
 
 
 def lambda_handler(event, context):
@@ -972,4 +965,4 @@ def lambda_handler(event, context):
     options = event.get("Options", [])
     if not isinstance(options, list):
         raise ValueError("'Options' must be a list if provided.")
-    main([batch, packager] + options)
+    main(batch, packager, options)
