@@ -238,6 +238,30 @@ class ThisWeekPackagerMonthBoundaryTestCase(unittest.TestCase):
                 self.assertGreaterEqual(packager.to_datetime, fixed_now)
 
 
+class AllWeeksThisMonthPackagerMatchesThisWeekPackagerTestCase(unittest.TestCase):
+    """AllWeeksThisMonthPackager must produce the same current-week chunk
+    that ThisWeekPackager would, even early in the month before the
+    month's first Monday has occurred."""
+
+    def test_opening_partial_week_matches_this_week_packager(self):
+        fixed_now = datetime(2026, 9, 2, 12, 0, 0, tzinfo=timezone.utc)
+        files = [
+            make_file("2026-09-01/file.mp4", datetime(2026, 9, 1, tzinfo=timezone.utc))
+        ]
+        with frozen_time(fixed_now):
+            this_week_packager = process.ThisWeekPackager()
+            _packager, client = run_packager(
+                process.AllWeeksThisMonthPackager, files=files
+            )
+        items = client.manifest_body["items"]
+        self.assertEqual(len(items), 1)
+        from_datetime = datetime.fromisoformat(items[0]["from_datetime"])
+        to_datetime = datetime.fromisoformat(items[0]["to_datetime"])
+        self.assertEqual(from_datetime, this_week_packager.from_datetime)
+        self.assertEqual(to_datetime, this_week_packager.to_datetime)
+        self.assertEqual(items[0]["file_count"], 1)
+
+
 class AllWeeksThisMonthPackagerMonthBoundaryTestCase(unittest.TestCase):
     """Each week chunk must never spill over into the following month."""
 
@@ -259,6 +283,83 @@ class AllWeeksThisMonthPackagerMonthBoundaryTestCase(unittest.TestCase):
         self.assertEqual(from_datetime.month, to_datetime.month)
         self.assertEqual(to_datetime.month, 9)
         self.assertEqual(items[0]["file_count"], 1)
+
+
+class AllWeeksThisMonthPackagerRerunTestCase(unittest.TestCase):
+    """Regression test: weeks with no new chunk must not be wiped without one."""
+
+    def test_early_in_the_month_keeps_previously_recorded_weeks(self):
+        # Running on day 2 of the month means week two's Monday (Sep 7)
+        # hasn't occurred yet, so no replacement chunk is generated for it.
+        # That existing weekly entry must survive this run, not vanish, even
+        # though a new chunk is generated for the opening partial week.
+        existing_manifest = {
+            "packager": "all_weeks_this_month",
+            "packager_group": "by_date",
+            "items": [
+                {
+                    "name": "07 to 13 September 2026",
+                    "file": f"{EXPORT_PREFIX}/2026-09-w1.zip",
+                    "total_size": 10,
+                    "file_count": 1,
+                    "created_timestamp": "2026-09-13T00:00:00Z",
+                    "from_datetime": "2026-09-07T00:00:00Z",
+                    "to_datetime": "2026-09-13T23:59:59.999999Z",
+                }
+            ],
+        }
+        files = [
+            make_file("2026-09-01/file.mp4", datetime(2026, 9, 1, tzinfo=timezone.utc))
+        ]
+        with frozen_time(datetime(2026, 9, 2, 12, 0, 0, tzinfo=timezone.utc)):
+            _packager, client = run_packager(
+                process.AllWeeksThisMonthPackager,
+                files=files,
+                manifest_body=existing_manifest,
+            )
+        item_names = [item["name"] for item in client.manifest_body["items"]]
+        self.assertIn("07 to 13 September 2026", item_names)
+        self.assertIn("1 to 6 September 2026", item_names)
+
+    def test_replaces_only_the_week_it_regenerates(self):
+        existing_manifest = {
+            "packager": "all_weeks_this_month",
+            "packager_group": "by_date",
+            "items": [
+                {
+                    "name": "07 to 13 September 2026",
+                    "file": f"{EXPORT_PREFIX}/2026-09-w1.zip",
+                    "total_size": 10,
+                    "file_count": 1,
+                    "created_timestamp": "2026-09-13T00:00:00Z",
+                    "from_datetime": "2026-09-07T00:00:00Z",
+                    "to_datetime": "2026-09-13T23:59:59.999999Z",
+                },
+                {
+                    "name": "14 to 20 September 2026",
+                    "file": f"{EXPORT_PREFIX}/2026-09-w2.zip",
+                    "total_size": 10,
+                    "file_count": 1,
+                    "created_timestamp": "2026-09-20T00:00:00Z",
+                    "from_datetime": "2026-09-14T00:00:00Z",
+                    "to_datetime": "2026-09-20T23:59:59.999999Z",
+                },
+            ],
+        }
+        # Only week 2 (Sep 14-20) has a file this run.
+        files = [
+            make_file("2026-09-15/file.mp4", datetime(2026, 9, 15, tzinfo=timezone.utc))
+        ]
+        with frozen_time(datetime(2026, 9, 21, 12, 0, 0, tzinfo=timezone.utc)):
+            _packager, client = run_packager(
+                process.AllWeeksThisMonthPackager,
+                files=files,
+                manifest_body=existing_manifest,
+            )
+        items = client.manifest_body["items"]
+        item_names = [item["name"] for item in items]
+        self.assertIn("07 to 13 September 2026", item_names)
+        self.assertEqual(item_names.count("14 to 20 September 2026"), 1)
 
 
 class ThisMonthPackagerMonthBoundaryTestCase(unittest.TestCase):
@@ -518,7 +619,7 @@ class AllPreviousYearsPackagerTestCase(unittest.TestCase):
         self.assertEqual([item["name"] for item in items], ["2024", "2023", "2022"])
         self.assertEqual(sum(item["file_count"] for item in items), 3)
 
-    def test_removes_all_entries_up_to_and_including_last_year(self):
+    def test_replaces_years_it_regenerates_and_keeps_the_rest(self):
         existing_manifest = {
             "packager": "all_previous_years",
             "packager_group": "by_date",
@@ -543,6 +644,39 @@ class AllPreviousYearsPackagerTestCase(unittest.TestCase):
                 },
             ],
         }
+        # Only 2024 has files this run, so only the stale "2024" entry
+        # should be replaced; "2026" is out of range and always kept.
+        files = [make_file("2024/file.mp4", datetime(2024, 6, 1, tzinfo=timezone.utc))]
+        with frozen_time(TODAY):
+            _packager, client = run_packager(
+                process.AllPreviousYearsPackager,
+                files=files,
+                manifest_body=existing_manifest,
+            )
+        items = client.manifest_body["items"]
+        item_names = [item["name"] for item in items]
+        self.assertEqual(item_names.count("2024"), 1)
+        self.assertIn("2026", item_names)
+
+    def test_does_not_remove_a_year_with_no_replacement_chunk(self):
+        # Regression test: a stale entry must not be wiped just because it
+        # falls within the packager's date range if no fresh chunk was
+        # generated to replace it this run (e.g. no files scanned for it).
+        existing_manifest = {
+            "packager": "all_previous_years",
+            "packager_group": "by_date",
+            "items": [
+                {
+                    "name": "2024",
+                    "file": f"{EXPORT_PREFIX}/2024.zip",
+                    "total_size": 10,
+                    "file_count": 1,
+                    "created_timestamp": "2024-12-31T00:00:00Z",
+                    "from_datetime": "2024-01-01T00:00:00Z",
+                    "to_datetime": "2024-12-31T23:59:59.999999Z",
+                },
+            ],
+        }
         files = [make_file("2023/file.mp4", datetime(2023, 6, 1, tzinfo=timezone.utc))]
         with frozen_time(TODAY):
             _packager, client = run_packager(
@@ -551,8 +685,8 @@ class AllPreviousYearsPackagerTestCase(unittest.TestCase):
                 manifest_body=existing_manifest,
             )
         item_names = [item["name"] for item in client.manifest_body["items"]]
-        self.assertNotIn("2024", item_names)
-        self.assertIn("2026", item_names)
+        self.assertIn("2024", item_names)
+        self.assertIn("2023", item_names)
         self.assertIn("2023", item_names)
 
 

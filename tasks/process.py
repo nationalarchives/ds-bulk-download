@@ -251,7 +251,9 @@ class Packager:
         return [chunk.manifest_data.model_dump(mode="json") for chunk in chunked_files]
 
     def _manifest_items_to_remove(
-        self, existing_manifest_items: list[BatchManifestItem]
+        self,
+        existing_manifest_items: list[BatchManifestItem],
+        chunked_files: list[FileBatch],
     ) -> list[BatchManifestItem]:
         return existing_manifest_items
 
@@ -260,7 +262,9 @@ class Packager:
     ) -> None:
         logger.info("Post-processing tasks")
         if existing_manifest.packager_group == self.packager_group:
-            items_to_remove = self._manifest_items_to_remove(existing_manifest.items)
+            items_to_remove = self._manifest_items_to_remove(
+                existing_manifest.items, chunked_files
+            )
             item_names_to_remove = [item.name for item in items_to_remove]
             logger.debug(f"-- Items to remove from manifest: {item_names_to_remove}")
             items_to_keep = [
@@ -351,7 +355,9 @@ class ThisWeekPackager(Packager):
         return [chunk]
 
     def _manifest_items_to_remove(
-        self, existing_manifest_items: list[BatchManifestItem]
+        self,
+        existing_manifest_items: list[BatchManifestItem],
+        chunked_files: list[FileBatch],
     ) -> list[BatchManifestItem]:
         return [
             item
@@ -378,57 +384,65 @@ class AllWeeksThisMonthPackager(Packager):
     def _chunk(self) -> list[FileBatch]:
         logger.info("Chunking files")
         today_datetime = datetime.now(timezone.utc)
-        mondays_this_month = [
-            (today_datetime.replace(day=1) + timedelta(days=i)).date()
-            for i in range(today_datetime.day)
-            if (today_datetime.replace(day=1) + timedelta(days=i)).weekday() == 0
-        ]
-        self.week_index = len(mondays_this_month)
-        if today_datetime.replace(day=1).weekday() != 0:
-            self.week_index += 1
+        # Start from the Monday of the week containing day 1, which may fall
+        # in the previous month, so a month that doesn't start on a Monday
+        # still gets a chunk for its opening partial week - matching what
+        # ThisWeekPackager would produce while that week is "this week".
+        week_start = self.from_datetime - timedelta(days=self.from_datetime.weekday())
         chunks = []
-        for week_index, week in enumerate(mondays_this_month, start=1):
-            week_start = today_datetime.replace(
-                day=week.day, hour=0, minute=0, second=0, microsecond=0
-            )
+        week_index = 0
+        while week_start <= today_datetime and week_start <= self.to_datetime:
+            week_index += 1
             week_end = (week_start + timedelta(days=6)).replace(
                 hour=23, minute=59, second=59, microsecond=999999
             )
-            # Clamp so a week ending in the next month doesn't get packaged
-            # across two different months.
-            week_end = min(week_end, self.to_datetime)
+            # Clamp both ends to the current month so a week never spans two
+            # different months.
+            clamped_week_start = max(week_start, self.from_datetime)
+            clamped_week_end = min(week_end, self.to_datetime)
             files = [
                 file
                 for file in self.files
-                if week_start <= file["LastModified"] <= week_end
+                if clamped_week_start <= file["LastModified"] <= clamped_week_end
             ]
-            if not files:
-                continue
-            chunk = FileBatch(
-                manifest_data=BatchManifestItem(
-                    name=f"{week_start.strftime('%d')} to {int(week_end.strftime('%d'))} {week_end.strftime('%B %Y')}",
-                    file=f"{self.export_prefix}/{today_datetime.strftime('%Y-%m')}-w{week_index}.zip"
-                    if self.export_prefix
-                    else f"{today_datetime.strftime('%Y-%m')}-w{week_index}.zip",
-                    total_size=sum(file["Size"] for file in files),
-                    file_count=len(files),
-                    created_timestamp=datetime.now(timezone.utc),
-                    from_datetime=week_start,
-                    to_datetime=week_end,
-                ),
-                files=files,
-            )
-            chunks.append(chunk)
+            if files:
+                chunk = FileBatch(
+                    manifest_data=BatchManifestItem(
+                        name=f"{int(clamped_week_start.strftime('%d'))} to {int(clamped_week_end.strftime('%d'))} {clamped_week_end.strftime('%B %Y')}",
+                        file=f"{self.export_prefix}/{today_datetime.strftime('%Y-%m')}-w{week_index}.zip"
+                        if self.export_prefix
+                        else f"{today_datetime.strftime('%Y-%m')}-w{week_index}.zip",
+                        total_size=sum(file["Size"] for file in files),
+                        file_count=len(files),
+                        created_timestamp=datetime.now(timezone.utc),
+                        from_datetime=clamped_week_start,
+                        to_datetime=clamped_week_end,
+                    ),
+                    files=files,
+                )
+                chunks.append(chunk)
+            week_start += timedelta(days=7)
+        self.week_index = week_index
         return chunks
 
     def _manifest_items_to_remove(
-        self, existing_manifest_items: list[BatchManifestItem]
+        self,
+        existing_manifest_items: list[BatchManifestItem],
+        chunked_files: list[FileBatch],
     ) -> list[BatchManifestItem]:
+        # Only replace weeks that have actually been regenerated this run, so
+        # weeks not reached yet (or with no files) aren't wiped without a
+        # replacement, e.g. when running early in the month.
+        new_ranges = {
+            (chunk.manifest_data.from_datetime, chunk.manifest_data.to_datetime)
+            for chunk in chunked_files
+        }
         return [
             item
             for item in existing_manifest_items
             if item.from_datetime >= self.from_datetime
             and item.to_datetime <= self.to_datetime
+            and (item.from_datetime, item.to_datetime) in new_ranges
         ]
 
 
@@ -481,7 +495,9 @@ class LastMonthPackager(Packager):
         return [chunk]
 
     def _manifest_items_to_remove(
-        self, existing_manifest_items: list[BatchManifestItem]
+        self,
+        existing_manifest_items: list[BatchManifestItem],
+        chunked_files: list[FileBatch],
     ) -> list[BatchManifestItem]:
         return [
             item
@@ -530,7 +546,9 @@ class ThisMonthPackager(Packager):
         return [chunk]
 
     def _manifest_items_to_remove(
-        self, existing_manifest_items: list[BatchManifestItem]
+        self,
+        existing_manifest_items: list[BatchManifestItem],
+        chunked_files: list[FileBatch],
     ) -> list[BatchManifestItem]:
         return [
             item
@@ -590,13 +608,22 @@ class AllMonthsThisYearPackager(Packager):
         return chunks
 
     def _manifest_items_to_remove(
-        self, existing_manifest_items: list[BatchManifestItem]
+        self,
+        existing_manifest_items: list[BatchManifestItem],
+        chunked_files: list[FileBatch],
     ) -> list[BatchManifestItem]:
+        # Only replace months that have actually been regenerated this run,
+        # so months with no replacement chunk aren't wiped without one.
+        new_ranges = {
+            (chunk.manifest_data.from_datetime, chunk.manifest_data.to_datetime)
+            for chunk in chunked_files
+        }
         return [
             item
             for item in existing_manifest_items
             if item.from_datetime >= self.from_datetime
             and item.to_datetime <= self.to_datetime
+            and (item.from_datetime, item.to_datetime) in new_ranges
         ]
 
 
@@ -639,7 +666,9 @@ class LastYearPackager(Packager):
         return [chunk]
 
     def _manifest_items_to_remove(
-        self, existing_manifest_items: list[BatchManifestItem]
+        self,
+        existing_manifest_items: list[BatchManifestItem],
+        chunked_files: list[FileBatch],
     ) -> list[BatchManifestItem]:
         return [
             item
@@ -688,7 +717,9 @@ class ThisYearPackager(Packager):
         return [chunk]
 
     def _manifest_items_to_remove(
-        self, existing_manifest_items: list[BatchManifestItem]
+        self,
+        existing_manifest_items: list[BatchManifestItem],
+        chunked_files: list[FileBatch],
     ) -> list[BatchManifestItem]:
         return [
             item
@@ -744,12 +775,21 @@ class AllPreviousYearsPackager(Packager):
         return chunks
 
     def _manifest_items_to_remove(
-        self, existing_manifest_items: list[BatchManifestItem]
+        self,
+        existing_manifest_items: list[BatchManifestItem],
+        chunked_files: list[FileBatch],
     ) -> list[BatchManifestItem]:
+        # Only remove years that have actually been regenerated this run, so
+        # years with no replacement chunk aren't wiped without one.
+        new_ranges = {
+            (chunk.manifest_data.from_datetime, chunk.manifest_data.to_datetime)
+            for chunk in chunked_files
+        }
         return [
             item
             for item in existing_manifest_items
             if item.to_datetime <= self.to_datetime
+            and (item.from_datetime, item.to_datetime) in new_ranges
         ]
 
 
