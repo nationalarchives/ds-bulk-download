@@ -2,7 +2,7 @@ import json
 import os
 from typing import ClassVar
 
-from app.lib.util import strtobool
+from tna_utilities import strtobool
 
 
 class Features:
