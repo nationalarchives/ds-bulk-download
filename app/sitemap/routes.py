@@ -7,7 +7,7 @@ from app.sitemap import bp
 @bp.route("/sitemap.xml")
 @cacheable_duration(86400)
 def sitemap():
-    pages = list()
+    pages = []
     for rule in current_app.url_map.iter_rules():
         if (
             str(rule) != "/"
