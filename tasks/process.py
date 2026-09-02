@@ -4,11 +4,10 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 from stat import S_IFREG
-from typing import Optional
 
 import boto3
 from boto3.s3.transfer import TransferConfig
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from stream_zip import ZIP_64, stream_zip
 from to_file_like_obj import to_file_like_obj
 
@@ -25,14 +24,14 @@ class BatchManifestItem(BaseModel):
     total_size: int
     file_count: int
     created_timestamp: datetime
-    from_datetime: Optional[datetime] = None
-    to_datetime: Optional[datetime] = None
+    from_datetime: datetime | None = None
+    to_datetime: datetime | None = None
 
 
 class BatchManifest(BaseModel):
     packager: str
     packager_group: str
-    updated: datetime = datetime.now()
+    updated: datetime = datetime.now(timezone.utc)
     items: list[BatchManifestItem]
 
 
@@ -42,19 +41,19 @@ class FileBatch(BaseModel):
 
 
 class Packager:
-    packager_name: Optional[str] = None
-    packager_group: Optional[str] = None
-    manifest_name: Optional[str] = None
+    packager_name: str | None = None
+    packager_group: str | None = None
+    manifest_name: str | None = None
     export_filename: str
-    source: Optional[str] = None
-    s3_client: Optional[boto3.client] = None
+    source: str | None = None
+    s3_client: boto3.client | None = None
     scanned: bool
 
     def __init__(
         self,
-        export_filename: Optional[str] = "all.zip",
-        from_datetime: Optional[datetime] = None,
-        to_datetime: Optional[datetime] = None,
+        export_filename: str | None = "all.zip",
+        from_datetime: datetime | None = None,
+        to_datetime: datetime | None = None,
     ):
         if not self.packager_name:
             raise ValueError(
@@ -95,7 +94,7 @@ class Packager:
                 break
             continuation_token = response.get("NextContinuationToken")
 
-    def scan(self, source: tuple[str, Optional[str]] = None) -> None:
+    def scan(self, source: tuple[str, str | None] | None = None) -> None:
         if source is None:
             raise ValueError("Source must be provided for scanning.")
         self.source = source
@@ -163,7 +162,7 @@ class Packager:
             items = TypeAdapter(list[BatchManifestItem]).validate_python(
                 json_content["items"]
             )
-        except Exception as e:
+        except ValidationError as e:
             logger.error(f"Error parsing manifest items: {e}")
             items = []
         return BatchManifest(
@@ -301,22 +300,32 @@ class ThisWeekPackager(Packager):
 
     def __init__(self):
         today_datetime = datetime.now(timezone.utc)
-        from_datetime = (
+        week_start = (
             today_datetime - timedelta(days=today_datetime.weekday())
         ).replace(hour=0, minute=0, second=0, microsecond=0)
-        to_datetime = (
+        week_end = (
             today_datetime + timedelta(days=6 - today_datetime.weekday())
         ).replace(hour=23, minute=59, second=59, microsecond=999999)
+        month_start = today_datetime.replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+        month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(
+            microseconds=1
+        )
+        # Clamp the week range to the current month so a week that spans a
+        # month boundary is never packaged across two different months.
+        from_datetime = max(week_start, month_start)
+        to_datetime = min(week_end, month_end)
         mondays_this_month = [
-            (from_datetime.replace(day=1) + timedelta(days=i)).date()
-            for i in range(from_datetime.day)
-            if (from_datetime.replace(day=1) + timedelta(days=i)).weekday() == 0
+            (month_start + timedelta(days=i)).date()
+            for i in range(today_datetime.day)
+            if (month_start + timedelta(days=i)).weekday() == 0
         ]
         self.week_index = len(mondays_this_month)
-        if from_datetime.replace(day=1).weekday() != 0:
+        if month_start.weekday() != 0:
             self.week_index += 1
         export_filename = f"{from_datetime.strftime('%Y-%m')}-w{self.week_index}.zip"
-        self.name = f"{from_datetime.strftime('%B %Y')} (week {self.week_index})"
+        self.name = f"{from_datetime.strftime('%B %Y')}"
         super().__init__(
             export_filename=export_filename,
             from_datetime=from_datetime,
@@ -361,17 +370,8 @@ class AllWeeksThisMonthPackager(Packager):
         from_datetime = today_datetime.replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
         )
-        to_datetime = datetime(
-            from_datetime.year,
-            from_datetime.month,
-            (
-                (from_datetime + timedelta(days=32)).replace(day=1) - timedelta(days=1)
-            ).day,
-            23,
-            59,
-            59,
-            999999,
-            tzinfo=timezone.utc,
+        to_datetime = (from_datetime + timedelta(days=32)).replace(day=1) - timedelta(
+            microseconds=1
         )
         super().__init__(from_datetime=from_datetime, to_datetime=to_datetime)
 
@@ -394,6 +394,9 @@ class AllWeeksThisMonthPackager(Packager):
             week_end = (week_start + timedelta(days=6)).replace(
                 hour=23, minute=59, second=59, microsecond=999999
             )
+            # Clamp so a week ending in the next month doesn't get packaged
+            # across two different months.
+            week_end = min(week_end, self.to_datetime)
             files = [
                 file
                 for file in self.files
@@ -403,7 +406,7 @@ class AllWeeksThisMonthPackager(Packager):
                 continue
             chunk = FileBatch(
                 manifest_data=BatchManifestItem(
-                    name=f"{week_start.strftime('%B %Y')} (week {week_index})",
+                    name=f"{week_start.strftime('%B %Y')}",
                     file=f"{self.export_prefix}/{today_datetime.strftime('%Y-%m')}-w{week_index}.zip"
                     if self.export_prefix
                     else f"{today_datetime.strftime('%Y-%m')}-w{week_index}.zip",
@@ -559,11 +562,8 @@ class AllMonthsThisYearPackager(Packager):
             month_start = today_datetime.replace(
                 day=1, month=month, hour=0, minute=0, second=0, microsecond=0
             )
-            month_end = (month_start + timedelta(days=31)).replace(day=1) - timedelta(
-                days=1
-            )
-            month_end = month_end.replace(
-                hour=23, minute=59, second=59, microsecond=999999
+            month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(
+                microseconds=1
             )
             files = [
                 file
@@ -711,7 +711,7 @@ class AllPreviousYearsPackager(Packager):
         logger.info("Chunking files")
         chunks = []
         this_year = datetime.now(timezone.utc).year
-        years = set(file["LastModified"].year for file in self.files)
+        years = {file["LastModified"].year for file in self.files}
         years = [year for year in years if year < this_year]
         for year in sorted(years, reverse=True):
             if year >= this_year:
@@ -842,7 +842,9 @@ class Batch:
     manifest_name = None
     prefix = None
 
-    def __init__(self, packager_class: type[Packager], extra_args: list[str] = None):
+    def __init__(
+        self, packager_class: type[Packager], extra_args: list[str] | None = None
+    ):
         self.packager_class = packager_class
         self.extra_args = extra_args or []
 
@@ -850,7 +852,7 @@ class Batch:
         if not self.source:
             raise ValueError("No source has been defined for this batch.")
         if not isinstance(self.source, tuple):
-            raise ValueError("Source must be a tuple of (bucket_name, prefix).")
+            raise TypeError("Source must be a tuple of (bucket_name, prefix).")
         if not self.source[0]:
             raise ValueError("Source bucket name must be provided.")
         if not self.manifest_name:
@@ -940,5 +942,5 @@ def lambda_handler(event, context):
     packager = event["Packager"]
     options = event.get("Options", [])
     if not isinstance(options, list):
-        raise ValueError("'Options' must be a list if provided.")
+        raise TypeError("'Options' must be a list if provided.")
     main(batch, packager, options)
