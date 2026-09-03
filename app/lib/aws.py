@@ -26,11 +26,10 @@ def get_files_manifest(manifest_name: str) -> dict:
     """
 
     try:
-        s3_endpoint = current_app.config.get("S3_ENDPOINT", None)
         s3_client = boto3.client(
             "s3",
             region_name=current_app.config.get("AWS_DEFAULT_REGION"),
-            endpoint_url=s3_endpoint,
+            endpoint_url=current_app.config.get("S3_ENDPOINT", None),
         )
         content_object = s3_client.get_object(
             Bucket=current_app.config.get("S3_EXPORT_BUCKET"), Key=manifest_name

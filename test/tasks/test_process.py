@@ -1,16 +1,9 @@
 import json
-import os
 import unittest
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest import mock
-
-os.environ.setdefault("S3_EXPORT_BUCKET", "export-bucket")
-os.environ.setdefault("S3_SOURCE_BUCKET_MERLIN", "source-bucket")
-os.environ.setdefault("S3_SOURCE_PREFIX_MERLIN", "merlin")
-os.environ.setdefault("S3_MANIFEST_NAME", "manifest.json")
-os.environ.setdefault("S3_EXPORT_PREFIX_MERLIN", "merlin")
 
 from tasks import process
 
@@ -20,7 +13,9 @@ class NoSuchKeyError(Exception):
 
 
 class FakeS3Client:
-    """A minimal in-memory stand-in for a boto3 S3 client."""
+    """
+    A minimal in-memory stand-in for a boto3 S3 client.
+    """
 
     def __init__(self, files=None, manifest_key=None, manifest_body=None):
         self.files = files or []
@@ -76,12 +71,13 @@ def make_file(key, last_modified, size=10):
     return {"Key": key, "LastModified": last_modified, "Size": size}
 
 
-SOURCE_BUCKET = "source-bucket"
-SOURCE_PREFIX = "merlin"
-EXPORT_BUCKET = "export-bucket"
-EXPORT_PREFIX = "merlin"
-MANIFEST_NAME = "manifest.json"
-MANIFEST_KEY = f"{EXPORT_PREFIX}/{MANIFEST_NAME}"
+S3_EXPORT_BUCKET = "test-export-bucket"
+S3_EXPORT_PREFIX_MERLIN = "merlin"
+S3_MANIFEST_NAME = "manifest.json"
+
+S3_SOURCE_BUCKET_MERLIN = "merlin-source-bucket"
+S3_SOURCE_PREFIX_MERLIN = "merlin"
+
 
 # A "today" of 2026-09-02 (Wednesday) means:
 #  - this month is September 2026
@@ -105,18 +101,28 @@ def run_packager(packager_class, extra_args=None, files=None, manifest_body=None
     """Instantiate, scan and process a packager against a fake S3 client."""
     client = FakeS3Client(
         files=files if files is not None else SAMPLE_FILES,
-        manifest_key=MANIFEST_KEY,
+        manifest_key=f"{S3_EXPORT_PREFIX_MERLIN}/{S3_MANIFEST_NAME}",
         manifest_body=manifest_body,
     )
     packager = packager_class(*(extra_args or []))
     packager.s3_client = client
-    packager.scan(source=(SOURCE_BUCKET, SOURCE_PREFIX))
-    packager.process(manifest_name=MANIFEST_NAME, export_prefix=EXPORT_PREFIX)
+    packager.scan(
+        source=(
+            S3_SOURCE_BUCKET_MERLIN,
+            S3_SOURCE_PREFIX_MERLIN,
+        )
+    )
+    packager.process(
+        manifest_name=S3_MANIFEST_NAME,
+        export_prefix=S3_EXPORT_PREFIX_MERLIN,
+    )
     return packager, client
 
 
 class PackagerManifestTestCase(unittest.TestCase):
-    """Covers every packager option and checks the manifest it writes."""
+    """
+    Covers every packager option and checks the manifest it writes.
+    """
 
     def test_this_week_packager_manifest(self):
         with frozen_time(TODAY):
@@ -213,7 +219,9 @@ class PackagerManifestTestCase(unittest.TestCase):
 
 
 class ThisWeekPackagerMonthBoundaryTestCase(unittest.TestCase):
-    """ThisWeekPackager must never package files spanning two months."""
+    """
+    ThisWeekPackager must never package files spanning two months.
+    """
 
     def test_never_crosses_a_month_boundary(self):
         boundary_dates = [
@@ -239,9 +247,11 @@ class ThisWeekPackagerMonthBoundaryTestCase(unittest.TestCase):
 
 
 class AllWeeksThisMonthPackagerMatchesThisWeekPackagerTestCase(unittest.TestCase):
-    """AllWeeksThisMonthPackager must produce the same current-week chunk
+    """
+    AllWeeksThisMonthPackager must produce the same current-week chunk
     that ThisWeekPackager would, even early in the month before the
-    month's first Monday has occurred."""
+    month's first Monday has occurred.
+    """
 
     def test_opening_partial_week_matches_this_week_packager(self):
         fixed_now = datetime(2026, 9, 2, 12, 0, 0, tzinfo=timezone.utc)
@@ -263,7 +273,9 @@ class AllWeeksThisMonthPackagerMatchesThisWeekPackagerTestCase(unittest.TestCase
 
 
 class AllWeeksThisMonthPackagerMonthBoundaryTestCase(unittest.TestCase):
-    """Each week chunk must never spill over into the following month."""
+    """
+    Each week chunk must never spill over into the following month.
+    """
 
     def test_last_week_of_month_never_crosses_a_month_boundary(self):
         # 2026-09-28 is a Monday, but September only has 30 days, so the
@@ -286,7 +298,9 @@ class AllWeeksThisMonthPackagerMonthBoundaryTestCase(unittest.TestCase):
 
 
 class AllWeeksThisMonthPackagerRerunTestCase(unittest.TestCase):
-    """Regression test: weeks with no new chunk must not be wiped without one."""
+    """
+    Regression test: weeks with no new chunk must not be wiped without one.
+    """
 
     def test_early_in_the_month_keeps_previously_recorded_weeks(self):
         # Running on day 2 of the month means week two's Monday (Sep 7)
@@ -299,7 +313,7 @@ class AllWeeksThisMonthPackagerRerunTestCase(unittest.TestCase):
             "items": [
                 {
                     "name": "07 to 13 September 2026",
-                    "file": f"{EXPORT_PREFIX}/2026-09-w1.zip",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2026-09-w1.zip",
                     "total_size": 10,
                     "file_count": 1,
                     "created_timestamp": "2026-09-13T00:00:00Z",
@@ -328,7 +342,7 @@ class AllWeeksThisMonthPackagerRerunTestCase(unittest.TestCase):
             "items": [
                 {
                     "name": "07 to 13 September 2026",
-                    "file": f"{EXPORT_PREFIX}/2026-09-w1.zip",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2026-09-w1.zip",
                     "total_size": 10,
                     "file_count": 1,
                     "created_timestamp": "2026-09-13T00:00:00Z",
@@ -337,7 +351,7 @@ class AllWeeksThisMonthPackagerRerunTestCase(unittest.TestCase):
                 },
                 {
                     "name": "14 to 20 September 2026",
-                    "file": f"{EXPORT_PREFIX}/2026-09-w2.zip",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2026-09-w2.zip",
                     "total_size": 10,
                     "file_count": 1,
                     "created_timestamp": "2026-09-20T00:00:00Z",
@@ -363,7 +377,9 @@ class AllWeeksThisMonthPackagerRerunTestCase(unittest.TestCase):
 
 
 class ThisMonthPackagerMonthBoundaryTestCase(unittest.TestCase):
-    """ThisMonthPackager's range must never span two different months."""
+    """
+    ThisMonthPackager's range must never span two different months.
+    """
 
     def test_never_crosses_a_month_boundary(self):
         boundary_dates = [
@@ -381,7 +397,9 @@ class ThisMonthPackagerMonthBoundaryTestCase(unittest.TestCase):
 
 
 class AllMonthsThisYearPackagerMonthBoundaryTestCase(unittest.TestCase):
-    """Each month chunk must never span two different months."""
+    """
+    Each month chunk must never span two different months.
+    """
 
     def test_month_chunks_never_cross_a_month_boundary(self):
         fixed_now = datetime(2026, 9, 2, tzinfo=timezone.utc)
@@ -402,7 +420,9 @@ class AllMonthsThisYearPackagerMonthBoundaryTestCase(unittest.TestCase):
 
 
 class AllPackagerTestCase(unittest.TestCase):
-    """AllPackager should bundle every file into a single manifest item."""
+    """
+    AllPackager should bundle every file into a single manifest item.
+    """
 
     def test_bundles_every_file_regardless_of_date(self):
         with frozen_time(TODAY):
@@ -410,7 +430,7 @@ class AllPackagerTestCase(unittest.TestCase):
         items = client.manifest_body["items"]
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["name"], "All files")
-        self.assertEqual(items[0]["file"], f"{EXPORT_PREFIX}/all.zip")
+        self.assertEqual(items[0]["file"], f"{S3_EXPORT_PREFIX_MERLIN}/all.zip")
         self.assertEqual(items[0]["file_count"], len(SAMPLE_FILES))
         self.assertEqual(
             items[0]["total_size"], sum(file["Size"] for file in SAMPLE_FILES)
@@ -423,7 +443,7 @@ class AllPackagerTestCase(unittest.TestCase):
             "items": [
                 {
                     "name": "All files",
-                    "file": f"{EXPORT_PREFIX}/all.zip",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/all.zip",
                     "total_size": 1,
                     "file_count": 1,
                     "created_timestamp": "2026-01-01T00:00:00Z",
@@ -440,7 +460,9 @@ class AllPackagerTestCase(unittest.TestCase):
 
 
 class ChunkedPackagerTestCase(unittest.TestCase):
-    """ChunkedPackager should split files into fixed-size batches."""
+    """
+    ChunkedPackager should split files into fixed-size batches.
+    """
 
     def test_default_chunk_size(self):
         with frozen_time(TODAY):
@@ -458,7 +480,10 @@ class ChunkedPackagerTestCase(unittest.TestCase):
         self.assertEqual(len(items), 3)
         self.assertEqual([item["file_count"] for item in items], [3, 3, 2])
         self.assertEqual(items[0]["name"], "Batch 1 of 3")
-        self.assertEqual(items[0]["file"], f"{EXPORT_PREFIX}/all_0001.zip")
+        self.assertEqual(
+            items[0]["file"],
+            f"{S3_EXPORT_PREFIX_MERLIN}/all_0001.zip",
+        )
 
     def test_chunk_size_larger_than_file_count_creates_one_batch(self):
         with frozen_time(TODAY):
@@ -471,7 +496,9 @@ class ChunkedPackagerTestCase(unittest.TestCase):
 
 
 class SizedPackagerTestCase(unittest.TestCase):
-    """SizedPackager should split files into batches bounded by total size."""
+    """
+    SizedPackager should split files into batches bounded by total size.
+    """
 
     def test_default_chunk_size(self):
         with frozen_time(TODAY):
@@ -509,7 +536,9 @@ class SizedPackagerTestCase(unittest.TestCase):
 
 
 class ThisYearPackagerTestCase(unittest.TestCase):
-    """ThisYearPackager should bundle only files from the current year."""
+    """
+    ThisYearPackager should bundle only files from the current year.
+    """
 
     def test_never_crosses_a_year_boundary(self):
         with frozen_time(TODAY):
@@ -526,7 +555,7 @@ class ThisYearPackagerTestCase(unittest.TestCase):
             "items": [
                 {
                     "name": "2026",
-                    "file": f"{EXPORT_PREFIX}/2026.zip",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2026.zip",
                     "total_size": 10,
                     "file_count": 1,
                     "created_timestamp": "2026-06-01T00:00:00Z",
@@ -535,7 +564,7 @@ class ThisYearPackagerTestCase(unittest.TestCase):
                 },
                 {
                     "name": "2025",
-                    "file": f"{EXPORT_PREFIX}/2025.zip",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2025.zip",
                     "total_size": 10,
                     "file_count": 1,
                     "created_timestamp": "2025-12-31T00:00:00Z",
@@ -554,7 +583,9 @@ class ThisYearPackagerTestCase(unittest.TestCase):
 
 
 class LastYearPackagerTestCase(unittest.TestCase):
-    """LastYearPackager should bundle only files from the previous year."""
+    """
+    LastYearPackager should bundle only files from the previous year.
+    """
 
     def test_never_crosses_a_year_boundary(self):
         with frozen_time(TODAY):
@@ -571,7 +602,7 @@ class LastYearPackagerTestCase(unittest.TestCase):
             "items": [
                 {
                     "name": "March 2025",
-                    "file": f"{EXPORT_PREFIX}/2025-03.zip",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2025-03.zip",
                     "total_size": 10,
                     "file_count": 1,
                     "created_timestamp": "2025-03-31T00:00:00Z",
@@ -580,7 +611,7 @@ class LastYearPackagerTestCase(unittest.TestCase):
                 },
                 {
                     "name": "2024",
-                    "file": f"{EXPORT_PREFIX}/2024.zip",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2024.zip",
                     "total_size": 10,
                     "file_count": 1,
                     "created_timestamp": "2024-12-31T00:00:00Z",
@@ -600,7 +631,9 @@ class LastYearPackagerTestCase(unittest.TestCase):
 
 
 class AllPreviousYearsPackagerTestCase(unittest.TestCase):
-    """AllPreviousYearsPackager should chunk by year, excluding this year."""
+    """
+    AllPreviousYearsPackager should chunk by year, excluding this year.
+    """
 
     def test_excludes_the_current_year_and_orders_newest_first(self):
         files = [
@@ -626,7 +659,7 @@ class AllPreviousYearsPackagerTestCase(unittest.TestCase):
             "items": [
                 {
                     "name": "2024",
-                    "file": f"{EXPORT_PREFIX}/2024.zip",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2024.zip",
                     "total_size": 10,
                     "file_count": 1,
                     "created_timestamp": "2024-12-31T00:00:00Z",
@@ -635,7 +668,7 @@ class AllPreviousYearsPackagerTestCase(unittest.TestCase):
                 },
                 {
                     "name": "2026",
-                    "file": f"{EXPORT_PREFIX}/2026.zip",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2026.zip",
                     "total_size": 10,
                     "file_count": 1,
                     "created_timestamp": "2026-06-01T00:00:00Z",
@@ -668,7 +701,7 @@ class AllPreviousYearsPackagerTestCase(unittest.TestCase):
             "items": [
                 {
                     "name": "2024",
-                    "file": f"{EXPORT_PREFIX}/2024.zip",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2024.zip",
                     "total_size": 10,
                     "file_count": 1,
                     "created_timestamp": "2024-12-31T00:00:00Z",
@@ -691,7 +724,9 @@ class AllPreviousYearsPackagerTestCase(unittest.TestCase):
 
 
 class LastMonthPackagerRemovesWeeklyEntriesTestCase(unittest.TestCase):
-    """LastMonthPackager must clear out all of last month's weekly manifest entries."""
+    """
+    LastMonthPackager must clear out all of last month's weekly manifest entries.
+    """
 
     def test_removes_all_weekly_entries_for_previous_month(self):
         existing_manifest = {
@@ -700,7 +735,7 @@ class LastMonthPackagerRemovesWeeklyEntriesTestCase(unittest.TestCase):
             "items": [
                 {
                     "name": "August 2026 (week 1)",
-                    "file": f"{EXPORT_PREFIX}/2026-08-w1.zip",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2026-08-w1.zip",
                     "total_size": 10,
                     "file_count": 1,
                     "created_timestamp": "2026-08-05T00:00:00Z",
@@ -709,7 +744,7 @@ class LastMonthPackagerRemovesWeeklyEntriesTestCase(unittest.TestCase):
                 },
                 {
                     "name": "August 2026 (week 3)",
-                    "file": f"{EXPORT_PREFIX}/2026-08-w3.zip",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2026-08-w3.zip",
                     "total_size": 10,
                     "file_count": 1,
                     "created_timestamp": "2026-08-20T00:00:00Z",
@@ -718,7 +753,7 @@ class LastMonthPackagerRemovesWeeklyEntriesTestCase(unittest.TestCase):
                 },
                 {
                     "name": "July 2026",
-                    "file": f"{EXPORT_PREFIX}/2026-07.zip",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2026-07.zip",
                     "total_size": 10,
                     "file_count": 1,
                     "created_timestamp": "2026-07-31T00:00:00Z",
