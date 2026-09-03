@@ -43,10 +43,10 @@ def create_app(config_class):
 
     @app.context_processor
     def context_processor():
-        return dict(
-            cookie_preference=cookie_preference,
-            now_iso_8601=now_iso_8601,
-            app_config={
+        return {
+            "cookie_preference": cookie_preference,
+            "now_iso_8601": now_iso_8601,
+            "app_config": {
                 "ENVIRONMENT_NAME": app.config["ENVIRONMENT_NAME"],
                 "CONTAINER_IMAGE": app.config["CONTAINER_IMAGE"],
                 "BUILD_VERSION": app.config["BUILD_VERSION"],
@@ -57,9 +57,9 @@ def create_app(config_class):
                 "S3_EXPORT_BUCKET_HOST_URL": app.config["S3_EXPORT_BUCKET_HOST_URL"],
                 "MERLIN_FILENAME_REPORT_URL": app.config["MERLIN_FILENAME_REPORT_URL"],
             },
-            feature={},
-            pretty_date_range=pretty_date_range,
-        )
+            "feature": {},
+            "pretty_date_range": pretty_date_range,
+        }
 
     app.add_template_filter(pretty_date)
     app.add_template_filter(pretty_datetime)

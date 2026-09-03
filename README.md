@@ -61,12 +61,13 @@ In addition to the [base Docker image variables](https://github.com/nationalarch
 | `FORCE_HTTPS`                | Redirect requests to HTTPS as part of the CSP                        | _none_                                     |
 | `GA4_ID`                     | The Google Analytics 4 ID                                            | _none_                                     |
 | `AWS_DEFAULT_REGION`         | The default AWS region                                               | `eu-west-2`                                |
+| `S3_ENDPOINT`                | An optional custom S3 endpoint                                       | _none_ (`s3.<region>.amazonaws.com`)       |
 | `S3_EXPORT_BUCKET`           | The S3 bucket where the ZIP files and manifest should be uploaded to | _none_                                     |
 | `S3_EXPORT_PREFIX_MERLIN`    | The S3 bucket folder for the Merlin files and manifest               | `merlin`                                   |
 | `S3_MANIFEST_NAME`           | The S3 location of the Merlin files manifest                         | `manifest.json`                            |
-| `S3_SOURCE_BUCKET_MERLIN`    | The S3 bucket containing all the of Merlin files                     | _none_                                     |
-| `S3_SOURCE_PREFIX_MERLIN`    | The S3 prefix for the source Merlin files                            | _none_                                     |
 | `S3_EXPORT_BUCKET_HOST_URL`  | The domain which serves the ZIP files                                | `https://download.nationalarchives.gov.uk` |
 | `MERLIN_FILENAME_REPORT_URL` | The URL for the Merlin filename report                               | _none_                                     |
+| `S3_SOURCE_BUCKET_MERLIN`    | The S3 bucket containing the source of the of Merlin files           | _none_                                     |
+| `S3_SOURCE_PREFIX_MERLIN`    | The S3 prefix for the source Merlin files                            | _none_                                     |
 
 [^1] [Debugging in Flask](https://flask.palletsprojects.com/en/2.3.x/debugging/)
