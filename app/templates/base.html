@@ -2,7 +2,7 @@
 
 {%- from 'components/cookie-banner/macro.html' import tnaCookieBanner -%}
 {%- from 'components/footer/macro.html' import tnaFooter -%}
-{%- from 'components/header/macro.html' import tnaHeader -%}
+{%- from 'components/global-header/macro.html' import tnaGlobalHeader -%}
 
 {%- set theme = request.cookies.get('theme') or 'system' -%}
 {%- set themeAccent = themeAccent if themeAccent else 'green' -%}
@@ -56,11 +56,13 @@
 {% endblock cookies %}
 
 {% block header %}
-  {{ tnaHeader({
-    'logo': {
-      'href': url_for('main.index') ,
-      'title': 'Service home page'
-    }
+  {{ tnaGlobalHeader({
+    'defaultContent': True,
+    'phaseBanner': {
+      'phase': 'Beta',
+      'message': 'This is a new service. Help us improve it and <a href="https://www.smartsurvey.co.uk/s/DN07V0/?area=header&source=' ~ (request.url | url_encode) ~ '" target="_blank" rel="noreferrer nofollow noopener">give your feedback (opens in new tab)</a>.',
+      'classes': 'tna-background-contrast'
+    } if feature.PHASE_BANNER and display_phase_banner() else None
   }) | indent(6) }}
 {% endblock header %}
 
@@ -68,6 +70,7 @@
   {{ tnaFooter({
     'themeSelector': True,
     'currentTheme': theme,
+    'defaultContent': True,
     'classes': 'tna-!--margin-top-l'
   }) | indent(4) }}
 {% endblock footer %}
