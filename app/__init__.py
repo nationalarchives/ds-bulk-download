@@ -8,7 +8,7 @@ from tna_utilities.number import pretty_file_size
 
 from app.lib.context_processor import cookie_preference, now_iso_8601
 from app.lib.talisman import talisman
-from app.lib.template_filters import slugify
+from app.lib.template_filters import slugify, url_encode
 
 
 def create_app(config_class):
@@ -65,6 +65,7 @@ def create_app(config_class):
     app.add_template_filter(pretty_datetime)
     app.add_template_filter(pretty_file_size)
     app.add_template_filter(slugify)
+    app.add_template_filter(url_encode)
 
     from .healthcheck import bp as healthcheck_bp
     from .main import bp as site_bp
