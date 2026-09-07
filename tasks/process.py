@@ -1,7 +1,9 @@
 import argparse
+import hashlib
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from stat import S_IFREG
 
@@ -22,6 +24,8 @@ class BatchManifestItem(BaseModel):
     name: str
     file: str
     total_size: int
+    archive_size: int | None = None
+    checksum: str | None = None
     file_count: int
     created_timestamp: datetime
     from_datetime: datetime | None = None
@@ -38,6 +42,29 @@ class BatchManifest(BaseModel):
 class FileBatch(BaseModel):
     manifest_data: BatchManifestItem
     files: list[dict]
+
+
+class _HashingReader:
+    """Wraps a readable stream, tracking its size and SHA-256 checksum as it is read."""
+
+    def __init__(self, fileobj):
+        self._fileobj = fileobj
+        self._hash = hashlib.sha256()
+        self.size = 0
+
+    def read(self, size=-1):
+        chunk = self._fileobj.read(size)
+        if chunk:
+            self._hash.update(chunk)
+            self.size += len(chunk)
+        return chunk
+
+    def __getattr__(self, name):
+        return getattr(self._fileobj, name)
+
+    @property
+    def checksum(self) -> str:
+        return f"sha256:{self._hash.hexdigest()}"
 
 
 class Packager:
@@ -231,6 +258,7 @@ class Packager:
 
         zipped_chunks = stream_zip(member_files())
         zipped_chunks_obj = to_file_like_obj(zipped_chunks)
+        hashing_reader = _HashingReader(zipped_chunks_obj)
         # ------------------------------------------
         # Since we're streaming the final total size
         # is unknown we have to tell boto3 what part
@@ -240,11 +268,13 @@ class Packager:
         # so 2TB maximum final object size
         # ------------------------------------------
         s3_client.upload_fileobj(
-            Fileobj=zipped_chunks_obj,
+            Fileobj=hashing_reader,
             Bucket=self.s3_export_bucket,
             Key=chunk.manifest_data.file,
             Config=TransferConfig(multipart_chunksize=1024 * 1024 * 200),
         )
+        chunk.manifest_data.archive_size = hashing_reader.size
+        chunk.manifest_data.checksum = hashing_reader.checksum
 
     def _generate_manifest_items(self, chunked_files: list[FileBatch]) -> list[dict]:
         return [chunk.manifest_data.model_dump(mode="json") for chunk in chunked_files]
@@ -557,6 +587,68 @@ class ThisMonthPackager(Packager):
         ]
 
 
+class MonthPackager(Packager):
+    packager_name = "month"
+    packager_group = "by_date"
+
+    def __init__(self, *args, **kwargs):
+        if not args:
+            raise ValueError(
+                "MonthPackager requires a month argument in YYYY-MM format."
+            )
+        match = re.fullmatch(r"(\d{4})-(\d{2})", args[0])
+        if not match:
+            raise ValueError(
+                f"Invalid month argument: {args[0]!r}. Expected YYYY-MM format."
+            )
+        year, month = int(match.group(1)), int(match.group(2))
+        if not 1 <= month <= 12:
+            raise ValueError(
+                f"Invalid month argument: {args[0]!r}. Month must be between 01 and 12."
+            )
+        from_datetime = datetime(year, month, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+        to_datetime = (from_datetime + timedelta(days=32)).replace(day=1) - timedelta(
+            microseconds=1
+        )
+        export_filename = f"{from_datetime.strftime('%Y-%m')}.zip"
+        self.name = f"{from_datetime.strftime('%B %Y')}"
+        super().__init__(
+            export_filename=export_filename,
+            from_datetime=from_datetime,
+            to_datetime=to_datetime,
+        )
+
+    def _chunk(self) -> list[FileBatch]:
+        logger.info("Chunking files")
+        chunk = FileBatch(
+            manifest_data=BatchManifestItem(
+                name=self.name,
+                file=f"{self.export_prefix}/{self.export_filename}"
+                if self.export_prefix
+                else self.export_filename,
+                total_size=sum(file["Size"] for file in self.files),
+                file_count=len(self.files),
+                created_timestamp=datetime.now(timezone.utc),
+                from_datetime=self.from_datetime,
+                to_datetime=self.to_datetime,
+            ),
+            files=self.files,
+        )
+        return [chunk]
+
+    def _manifest_items_to_remove(
+        self,
+        existing_manifest_items: list[BatchManifestItem],
+        chunked_files: list[FileBatch],
+    ) -> list[BatchManifestItem]:
+        return [
+            item
+            for item in existing_manifest_items
+            if item.from_datetime >= self.from_datetime
+            and item.to_datetime <= self.to_datetime
+        ]
+
+
 class AllMonthsThisYearPackager(Packager):
     packager_name = "all_months_this_year"
     packager_group = "by_date"
@@ -579,6 +671,77 @@ class AllMonthsThisYearPackager(Packager):
             month_start = today_datetime.replace(
                 day=1, month=month, hour=0, minute=0, second=0, microsecond=0
             )
+            month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(
+                microseconds=1
+            )
+            files = [
+                file
+                for file in self.files
+                if month_start <= file["LastModified"] <= month_end
+            ]
+            if not files:
+                continue
+            chunk = FileBatch(
+                manifest_data=BatchManifestItem(
+                    name=f"{month_start.strftime('%B %Y')}",
+                    file=f"{self.export_prefix}/{month_start.strftime('%Y-%m')}.zip"
+                    if self.export_prefix
+                    else f"{month_start.strftime('%Y-%m')}.zip",
+                    total_size=sum(file["Size"] for file in files),
+                    file_count=len(files),
+                    created_timestamp=datetime.now(timezone.utc),
+                    from_datetime=month_start,
+                    to_datetime=month_end,
+                ),
+                files=files,
+            )
+            chunks.append(chunk)
+        return chunks
+
+    def _manifest_items_to_remove(
+        self,
+        existing_manifest_items: list[BatchManifestItem],
+        chunked_files: list[FileBatch],
+    ) -> list[BatchManifestItem]:
+        # Only replace months that have actually been regenerated this run,
+        # so months with no replacement chunk aren't wiped without one.
+        new_ranges = {
+            (chunk.manifest_data.from_datetime, chunk.manifest_data.to_datetime)
+            for chunk in chunked_files
+        }
+        return [
+            item
+            for item in existing_manifest_items
+            if item.from_datetime >= self.from_datetime
+            and item.to_datetime <= self.to_datetime
+            and (item.from_datetime, item.to_datetime) in new_ranges
+        ]
+
+
+class AllMonthsInYearPackager(Packager):
+    packager_name = "all_months_in_year"
+    packager_group = "by_date"
+
+    def __init__(self, *args, **kwargs):
+        if not args:
+            raise ValueError(
+                "AllMonthsInYearPackager requires a year argument in YYYY format."
+            )
+        if not re.fullmatch(r"\d{4}", args[0]):
+            raise ValueError(
+                f"Invalid year argument: {args[0]!r}. Expected YYYY format."
+            )
+        year = int(args[0])
+        from_datetime = datetime(year, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+        to_datetime = datetime(year, 12, 31, 23, 59, 59, 999999, tzinfo=timezone.utc)
+        super().__init__(from_datetime=from_datetime, to_datetime=to_datetime)
+
+    def _chunk(self) -> list[FileBatch]:
+        logger.info("Chunking files")
+        chunks = []
+        year = self.from_datetime.year
+        for month in range(1, 13):
+            month_start = datetime(year, month, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
             month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(
                 microseconds=1
             )
@@ -691,6 +854,59 @@ class ThisYearPackager(Packager):
         )
         export_filename = f"{today_datetime.year}.zip"
         self.name = str(today_datetime.year)
+        super().__init__(
+            export_filename=export_filename,
+            from_datetime=from_datetime,
+            to_datetime=to_datetime,
+        )
+
+    def _chunk(self) -> list[FileBatch]:
+        logger.info("Chunking files")
+        chunk = FileBatch(
+            manifest_data=BatchManifestItem(
+                name=self.name,
+                file=f"{self.export_prefix}/{self.export_filename}"
+                if self.export_prefix
+                else self.export_filename,
+                total_size=sum(file["Size"] for file in self.files),
+                file_count=len(self.files),
+                created_timestamp=datetime.now(timezone.utc),
+                from_datetime=self.from_datetime,
+                to_datetime=self.to_datetime,
+            ),
+            files=self.files,
+        )
+        return [chunk]
+
+    def _manifest_items_to_remove(
+        self,
+        existing_manifest_items: list[BatchManifestItem],
+        chunked_files: list[FileBatch],
+    ) -> list[BatchManifestItem]:
+        return [
+            item
+            for item in existing_manifest_items
+            if item.from_datetime >= self.from_datetime
+            and item.to_datetime <= self.to_datetime
+        ]
+
+
+class YearPackager(Packager):
+    packager_name = "year"
+    packager_group = "by_date"
+
+    def __init__(self, *args, **kwargs):
+        if not args:
+            raise ValueError("YearPackager requires a year argument in YYYY format.")
+        if not re.fullmatch(r"\d{4}", args[0]):
+            raise ValueError(
+                f"Invalid year argument: {args[0]!r}. Expected YYYY format."
+            )
+        year = int(args[0])
+        from_datetime = datetime(year, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+        to_datetime = datetime(year, 12, 31, 23, 59, 59, 999999, tzinfo=timezone.utc)
+        export_filename = f"{year}.zip"
+        self.name = str(year)
         super().__init__(
             export_filename=export_filename,
             from_datetime=from_datetime,
@@ -921,8 +1137,11 @@ packagers = {
     ThisYearPackager.packager_name: ThisYearPackager,
     LastMonthPackager.packager_name: LastMonthPackager,
     LastYearPackager.packager_name: LastYearPackager,
+    MonthPackager.packager_name: MonthPackager,
+    YearPackager.packager_name: YearPackager,
     AllWeeksThisMonthPackager.packager_name: AllWeeksThisMonthPackager,
     AllMonthsThisYearPackager.packager_name: AllMonthsThisYearPackager,
+    AllMonthsInYearPackager.packager_name: AllMonthsInYearPackager,
     AllPreviousYearsPackager.packager_name: AllPreviousYearsPackager,
     AllPackager.packager_name: AllPackager,
     ChunkedPackager.packager_name: ChunkedPackager,

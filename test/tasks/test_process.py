@@ -2,6 +2,8 @@ import json
 import unittest
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from hashlib import sha256
+from io import BytesIO
 from types import SimpleNamespace
 from unittest import mock
 
@@ -162,6 +164,32 @@ class PackagerManifestTestCase(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["file_count"], 1)
 
+    def test_month_packager_manifest(self):
+        with frozen_time(TODAY):
+            _packager, client = run_packager(
+                process.MonthPackager, extra_args=["2026-03"]
+            )
+        items = client.manifest_body["items"]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["file_count"], 1)
+
+    def test_year_packager_manifest(self):
+        with frozen_time(TODAY):
+            _packager, client = run_packager(process.YearPackager, extra_args=["2025"])
+        items = client.manifest_body["items"]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["file_count"], 1)
+
+    def test_all_months_in_year_packager_manifest(self):
+        with frozen_time(TODAY):
+            _packager, client = run_packager(
+                process.AllMonthsInYearPackager, extra_args=["2026"]
+            )
+        items = client.manifest_body["items"]
+        # January, March, August and September all fall inside 2026.
+        self.assertEqual(len(items), 4)
+        self.assertEqual(sum(item["file_count"] for item in items), 6)
+
     def test_all_weeks_this_month_packager_manifest(self):
         # AllWeeksThisMonthPackager only considers weeks whose Monday has
         # already occurred this month, so freeze "today" late in the month.
@@ -218,6 +246,54 @@ class PackagerManifestTestCase(unittest.TestCase):
         self.assertTrue(all(item["total_size"] <= 20 for item in items[:-1]))
 
 
+class ManifestChecksumTestCase(unittest.TestCase):
+    """
+    Each zipped archive should have its compressed size and checksum recorded
+    in the manifest, separately from total_size (the size of the source files).
+    """
+
+    def test_manifest_includes_archive_size_and_checksum(self):
+        with frozen_time(TODAY):
+            _packager, client = run_packager(process.AllPackager)
+        item = client.manifest_body["items"][0]
+        self.assertGreater(item["archive_size"], 0)
+        self.assertNotEqual(item["archive_size"], item["total_size"])
+        self.assertTrue(item["checksum"].startswith("sha256:"))
+        self.assertEqual(len(item["checksum"]), len("sha256:") + 64)
+
+    def test_checksum_is_deterministic_for_the_same_content(self):
+        with frozen_time(TODAY):
+            _packager1, client1 = run_packager(process.AllPackager)
+            _packager2, client2 = run_packager(process.AllPackager)
+        self.assertEqual(
+            client1.manifest_body["items"][0]["checksum"],
+            client2.manifest_body["items"][0]["checksum"],
+        )
+        self.assertEqual(
+            client1.manifest_body["items"][0]["archive_size"],
+            client2.manifest_body["items"][0]["archive_size"],
+        )
+
+
+class HashingReaderTestCase(unittest.TestCase):
+    """
+    _HashingReader should track size and checksum as data is read through it.
+    """
+
+    def test_tracks_size_and_matches_hashlib(self):
+        data = b"some test content for hashing"
+        reader = process._HashingReader(BytesIO(data))
+        result = b""
+        while True:
+            chunk = reader.read(4)
+            if not chunk:
+                break
+            result += chunk
+        self.assertEqual(result, data)
+        self.assertEqual(reader.size, len(data))
+        self.assertEqual(reader.checksum, f"sha256:{sha256(data).hexdigest()}")
+
+
 class ThisWeekPackagerMonthBoundaryTestCase(unittest.TestCase):
     """
     ThisWeekPackager must never package files spanning two months.
@@ -244,6 +320,275 @@ class ThisWeekPackagerMonthBoundaryTestCase(unittest.TestCase):
                 self.assertEqual(packager.from_datetime.month, fixed_now.month)
                 self.assertLessEqual(packager.from_datetime, fixed_now)
                 self.assertGreaterEqual(packager.to_datetime, fixed_now)
+
+
+class MonthPackagerTestCase(unittest.TestCase):
+    """
+    MonthPackager should bundle only files from the specified month.
+    """
+
+    def test_never_crosses_a_month_boundary(self):
+        with frozen_time(TODAY):
+            packager = process.MonthPackager("2026-03")
+        self.assertEqual(packager.from_datetime.month, packager.to_datetime.month)
+        self.assertEqual(packager.from_datetime.year, packager.to_datetime.year)
+        self.assertEqual(packager.from_datetime.month, 3)
+        self.assertEqual(packager.name, "March 2026")
+
+    def test_requires_a_month_argument(self):
+        with frozen_time(TODAY), self.assertRaises(ValueError):
+            process.MonthPackager()
+
+    def test_rejects_an_invalid_month_format(self):
+        with frozen_time(TODAY):
+            for invalid_value in ["2026", "2026-13", "2026-3", "not-a-month", "26-03"]:
+                with self.subTest(value=invalid_value), self.assertRaises(ValueError):
+                    process.MonthPackager(invalid_value)
+
+    def test_rerun_replaces_only_the_same_month_entry(self):
+        existing_manifest = {
+            "packager": "month",
+            "packager_group": "by_date",
+            "items": [
+                {
+                    "name": "March 2026",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2026-03.zip",
+                    "total_size": 10,
+                    "file_count": 1,
+                    "created_timestamp": "2026-03-31T00:00:00Z",
+                    "from_datetime": "2026-03-01T00:00:00Z",
+                    "to_datetime": "2026-03-31T23:59:59.999999Z",
+                },
+                {
+                    "name": "January 2026",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2026-01.zip",
+                    "total_size": 10,
+                    "file_count": 1,
+                    "created_timestamp": "2026-01-31T00:00:00Z",
+                    "from_datetime": "2026-01-01T00:00:00Z",
+                    "to_datetime": "2026-01-31T23:59:59.999999Z",
+                },
+            ],
+        }
+        with frozen_time(TODAY):
+            _packager, client = run_packager(
+                process.MonthPackager,
+                extra_args=["2026-03"],
+                manifest_body=existing_manifest,
+            )
+        items = client.manifest_body["items"]
+        item_names = [item["name"] for item in items]
+        self.assertEqual(item_names.count("March 2026"), 1)
+        self.assertIn("January 2026", item_names)
+
+    def test_rerun_removes_weekly_entries_within_the_month_but_not_other_months(self):
+        existing_manifest = {
+            "packager": "month",
+            "packager_group": "by_date",
+            "items": [
+                {
+                    "name": "1 to 7 March 2026",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2026-03-w1.zip",
+                    "total_size": 10,
+                    "file_count": 1,
+                    "created_timestamp": "2026-03-07T00:00:00Z",
+                    "from_datetime": "2026-03-01T00:00:00Z",
+                    "to_datetime": "2026-03-07T23:59:59.999999Z",
+                },
+                {
+                    "name": "January 2026",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2026-01.zip",
+                    "total_size": 10,
+                    "file_count": 1,
+                    "created_timestamp": "2026-01-31T00:00:00Z",
+                    "from_datetime": "2026-01-01T00:00:00Z",
+                    "to_datetime": "2026-01-31T23:59:59.999999Z",
+                },
+            ],
+        }
+        with frozen_time(TODAY):
+            _packager, client = run_packager(
+                process.MonthPackager,
+                extra_args=["2026-03"],
+                manifest_body=existing_manifest,
+            )
+        item_names = [item["name"] for item in client.manifest_body["items"]]
+        self.assertNotIn("1 to 7 March 2026", item_names)
+        self.assertIn("January 2026", item_names)
+
+
+class YearPackagerTestCase(unittest.TestCase):
+    """
+    YearPackager should bundle only files from the specified year.
+    """
+
+    def test_never_crosses_a_year_boundary(self):
+        with frozen_time(TODAY):
+            packager = process.YearPackager("2025")
+        self.assertEqual(packager.from_datetime.year, packager.to_datetime.year)
+        self.assertEqual(packager.from_datetime.year, 2025)
+        self.assertEqual(packager.name, "2025")
+
+    def test_requires_a_year_argument(self):
+        with frozen_time(TODAY), self.assertRaises(ValueError):
+            process.YearPackager()
+
+    def test_rerun_replaces_only_the_same_year_entry(self):
+        existing_manifest = {
+            "packager": "year",
+            "packager_group": "by_date",
+            "items": [
+                {
+                    "name": "2025",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2025.zip",
+                    "total_size": 10,
+                    "file_count": 1,
+                    "created_timestamp": "2025-12-31T00:00:00Z",
+                    "from_datetime": "2025-01-01T00:00:00Z",
+                    "to_datetime": "2025-12-31T23:59:59.999999Z",
+                },
+                {
+                    "name": "2023",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2023.zip",
+                    "total_size": 10,
+                    "file_count": 1,
+                    "created_timestamp": "2023-12-31T00:00:00Z",
+                    "from_datetime": "2023-01-01T00:00:00Z",
+                    "to_datetime": "2023-12-31T23:59:59.999999Z",
+                },
+            ],
+        }
+        with frozen_time(TODAY):
+            _packager, client = run_packager(
+                process.YearPackager,
+                extra_args=["2025"],
+                manifest_body=existing_manifest,
+            )
+        items = client.manifest_body["items"]
+        item_names = [item["name"] for item in items]
+        self.assertEqual(item_names.count("2025"), 1)
+        self.assertIn("2023", item_names)
+
+    def test_rerun_removes_monthly_entries_within_the_year_but_not_other_years(self):
+        existing_manifest = {
+            "packager": "year",
+            "packager_group": "by_date",
+            "items": [
+                {
+                    "name": "March 2025",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2025-03.zip",
+                    "total_size": 10,
+                    "file_count": 1,
+                    "created_timestamp": "2025-03-31T00:00:00Z",
+                    "from_datetime": "2025-03-01T00:00:00Z",
+                    "to_datetime": "2025-03-31T23:59:59.999999Z",
+                },
+                {
+                    "name": "2023",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2023.zip",
+                    "total_size": 10,
+                    "file_count": 1,
+                    "created_timestamp": "2023-12-31T00:00:00Z",
+                    "from_datetime": "2023-01-01T00:00:00Z",
+                    "to_datetime": "2023-12-31T23:59:59.999999Z",
+                },
+            ],
+        }
+        with frozen_time(TODAY):
+            _packager, client = run_packager(
+                process.YearPackager,
+                extra_args=["2025"],
+                manifest_body=existing_manifest,
+            )
+        item_names = [item["name"] for item in client.manifest_body["items"]]
+        self.assertNotIn("March 2025", item_names)
+        self.assertIn("2023", item_names)
+
+
+class AllMonthsInYearPackagerTestCase(unittest.TestCase):
+    """
+    AllMonthsInYearPackager should chunk a specific year's files by month.
+    """
+
+    def test_requires_a_year_argument(self):
+        with frozen_time(TODAY), self.assertRaises(ValueError):
+            process.AllMonthsInYearPackager()
+
+    def test_rejects_an_invalid_year_format(self):
+        with frozen_time(TODAY):
+            for invalid_value in ["26", "2026-01", "not-a-year", "20266"]:
+                with self.subTest(value=invalid_value), self.assertRaises(ValueError):
+                    process.AllMonthsInYearPackager(invalid_value)
+
+    def test_month_chunks_never_cross_a_month_boundary(self):
+        files = [
+            make_file("2025-01/file.mp4", datetime(2025, 1, 31, tzinfo=timezone.utc)),
+            make_file("2025-02/file.mp4", datetime(2025, 2, 28, tzinfo=timezone.utc)),
+        ]
+        with frozen_time(TODAY):
+            _packager, client = run_packager(
+                process.AllMonthsInYearPackager, extra_args=["2025"], files=files
+            )
+        items = client.manifest_body["items"]
+        self.assertEqual(len(items), 2)
+        for item in items:
+            from_datetime = datetime.fromisoformat(item["from_datetime"])
+            to_datetime = datetime.fromisoformat(item["to_datetime"])
+            self.assertEqual(from_datetime.month, to_datetime.month)
+            self.assertEqual(from_datetime.year, 2025)
+
+    def test_includes_the_current_month_unlike_all_months_this_year(self):
+        # Unlike AllMonthsThisYearPackager, a specific past year should
+        # include every month with files, including December.
+        files = [
+            make_file("2025-12/file.mp4", datetime(2025, 12, 25, tzinfo=timezone.utc))
+        ]
+        with frozen_time(TODAY):
+            _packager, client = run_packager(
+                process.AllMonthsInYearPackager, extra_args=["2025"], files=files
+            )
+        item_names = [item["name"] for item in client.manifest_body["items"]]
+        self.assertIn("December 2025", item_names)
+
+    def test_rerun_replaces_only_regenerated_months(self):
+        existing_manifest = {
+            "packager": "all_months_in_year",
+            "packager_group": "by_date",
+            "items": [
+                {
+                    "name": "January 2025",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2025-01.zip",
+                    "total_size": 10,
+                    "file_count": 1,
+                    "created_timestamp": "2025-01-31T00:00:00Z",
+                    "from_datetime": "2025-01-01T00:00:00Z",
+                    "to_datetime": "2025-01-31T23:59:59.999999Z",
+                },
+                {
+                    "name": "February 2025",
+                    "file": f"{S3_EXPORT_PREFIX_MERLIN}/2025-02.zip",
+                    "total_size": 10,
+                    "file_count": 1,
+                    "created_timestamp": "2025-02-28T00:00:00Z",
+                    "from_datetime": "2025-02-01T00:00:00Z",
+                    "to_datetime": "2025-02-28T23:59:59.999999Z",
+                },
+            ],
+        }
+        # Only January has files this run, so February must survive.
+        files = [
+            make_file("2025-01/file.mp4", datetime(2025, 1, 15, tzinfo=timezone.utc))
+        ]
+        with frozen_time(TODAY):
+            _packager, client = run_packager(
+                process.AllMonthsInYearPackager,
+                extra_args=["2025"],
+                files=files,
+                manifest_body=existing_manifest,
+            )
+        item_names = [item["name"] for item in client.manifest_body["items"]]
+        self.assertEqual(item_names.count("January 2025"), 1)
+        self.assertIn("February 2025", item_names)
 
 
 class AllWeeksThisMonthPackagerMatchesThisWeekPackagerTestCase(unittest.TestCase):
