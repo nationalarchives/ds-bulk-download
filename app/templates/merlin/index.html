@@ -4,6 +4,12 @@
 
 {%- set pageTitle = "Atomic Weapons Establishment: Merlin records" -%}
 
+{% block head %}
+{{ super() }}
+  <meta name="description" content="Atomic Weapons Establishment: Merlin records concerning nuclear test veterans and the nuclear testing programme">
+  <meta property="og:description" content="Atomic Weapons Establishment: Merlin records concerning nuclear test veterans and the nuclear testing programme">
+{% endblock head %}
+
 {% block content %}
 <div class="tna-background-accent-light">
   <div class="tna-section">
