@@ -7,7 +7,7 @@
 docker compose up -d
 
 # Create two buckets; merlin and export
-AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY bash -c 'for b in merlin export; do aws s3api create-bucket --bucket "$b" --acl public-read-write --endpoint-url http://localhost:65490; done'
+./test/create-empty-buckets.sh
 ```
 
 1. Open http://localhost:65490/

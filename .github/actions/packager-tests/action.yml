@@ -1,0 +1,18 @@
+name: Run Python tests
+
+runs:
+  using: "composite"
+  steps:
+    - name: Start app container
+      run: docker compose up --detach --wait --wait-timeout 300 app || docker compose logs app
+      shell: bash
+    - name: Create buckets
+      run: ./test/create-empty-buckets.sh
+      shell: bash
+    - name: Add files to buckets
+      run: |
+        AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY aws s3 cp src s3://merlin/ --recursive --endpoint-url http://localhost:65490
+      shell: bash
+    - name: Run a packager
+      run: docker compose exec app poetry run python tasks/process.py merlin all_year_month_week
+      shell: bash
