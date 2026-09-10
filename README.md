@@ -3,15 +3,16 @@
 ## Quickstart
 
 ```sh
-# Build and start the container
+# Build and start the containers
 docker compose up -d
+
+# Create two buckets; merlin and export
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY bash -c 'for b in merlin export; do aws s3api create-bucket --bucket "$b" --acl public-read-write --endpoint-url http://localhost:65490; done'
 ```
 
 1. Open http://localhost:65490/
-   - Username: `admin`
-   - Password: `password123`
 1. Add some files into the `merlin` bucket (http://localhost:65490/browser/merlin)
-1. In the `app` container, run `poetry run python tasks/process.py merlin all`
+1. In the `app` container, run `poetry run python tasks/process.py merlin all_year_month_week`
 1. Check http://localhost:65491/merlin/ for the zipped file
 
 ### Add the static assets
