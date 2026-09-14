@@ -44,7 +44,7 @@
   <meta property="og:type" content="website">
   <meta property="og:locale" content="en_GB">
   <meta name="twitter:card" content="summary_large_image">
-  <meta property="og:title" content="The National Archives">
+  <meta property="og:title" content="{{ pageTitle | default('The National Archives') }}">
 
   <link rel="canonical" href="https://www.nationalarchives.gov.uk/{{ request.path | trim('/') }}/">
   <meta property="og:url" content="https://www.nationalarchives.gov.uk/{{ request.path | trim('/') }}/">
