@@ -1,7 +1,7 @@
 import json
 import unittest
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from hashlib import sha256
 from io import BytesIO
 from types import SimpleNamespace
@@ -85,17 +85,17 @@ S3_SOURCE_PREFIX_MERLIN = "merlin"
 #  - this month is September 2026
 #  - this week is Mon 2026-08-31 -> Sun 2026-09-06 (crosses a month boundary)
 #  - last month is August 2026
-TODAY = datetime(2026, 9, 2, 12, 0, 0, tzinfo=timezone.utc)
+TODAY = datetime(2026, 9, 2, 12, 0, 0, tzinfo=UTC)
 
 SAMPLE_FILES = [
-    make_file("2023/file.mp4", datetime(2023, 5, 10, tzinfo=timezone.utc)),
-    make_file("2025/file.mp4", datetime(2025, 7, 20, tzinfo=timezone.utc)),
-    make_file("2026-01/file.mp4", datetime(2026, 1, 10, tzinfo=timezone.utc)),
-    make_file("2026-03/file.mp4", datetime(2026, 3, 5, tzinfo=timezone.utc)),
-    make_file("2026-08-w1/file.mp4", datetime(2026, 8, 5, tzinfo=timezone.utc)),
-    make_file("2026-08-w3/file.mp4", datetime(2026, 8, 20, tzinfo=timezone.utc)),
-    make_file("2026-09-w1/file.mp4", datetime(2026, 9, 1, tzinfo=timezone.utc)),
-    make_file("2026-09-w3/file.mp4", datetime(2026, 9, 15, tzinfo=timezone.utc)),
+    make_file("2023/file.mp4", datetime(2023, 5, 10, tzinfo=UTC)),
+    make_file("2025/file.mp4", datetime(2025, 7, 20, tzinfo=UTC)),
+    make_file("2026-01/file.mp4", datetime(2026, 1, 10, tzinfo=UTC)),
+    make_file("2026-03/file.mp4", datetime(2026, 3, 5, tzinfo=UTC)),
+    make_file("2026-08-w1/file.mp4", datetime(2026, 8, 5, tzinfo=UTC)),
+    make_file("2026-08-w3/file.mp4", datetime(2026, 8, 20, tzinfo=UTC)),
+    make_file("2026-09-w1/file.mp4", datetime(2026, 9, 1, tzinfo=UTC)),
+    make_file("2026-09-w3/file.mp4", datetime(2026, 9, 15, tzinfo=UTC)),
 ]
 
 
@@ -194,14 +194,10 @@ class PackagerManifestTestCase(unittest.TestCase):
         # AllWeeksThisMonthPackager only considers weeks whose Monday has
         # already occurred this month, so freeze "today" late in the month.
         week_files = [
-            make_file(
-                "2026-09-w2/file.mp4", datetime(2026, 9, 15, tzinfo=timezone.utc)
-            ),
-            make_file(
-                "2026-09-w3/file.mp4", datetime(2026, 9, 22, tzinfo=timezone.utc)
-            ),
+            make_file("2026-09-w2/file.mp4", datetime(2026, 9, 15, tzinfo=UTC)),
+            make_file("2026-09-w3/file.mp4", datetime(2026, 9, 22, tzinfo=UTC)),
         ]
-        with frozen_time(datetime(2026, 9, 30, 12, 0, 0, tzinfo=timezone.utc)):
+        with frozen_time(datetime(2026, 9, 30, 12, 0, 0, tzinfo=UTC)):
             _packager, client = run_packager(
                 process.AllWeeksThisMonthPackager, files=week_files
             )
@@ -301,12 +297,10 @@ class ThisWeekPackagerMonthBoundaryTestCase(unittest.TestCase):
 
     def test_never_crosses_a_month_boundary(self):
         boundary_dates = [
-            datetime(2026, 9, 2, tzinfo=timezone.utc),  # week crosses Aug/Sep
-            datetime(2026, 3, 1, tzinfo=timezone.utc),  # week crosses Feb/Mar
-            datetime(
-                2027, 1, 1, tzinfo=timezone.utc
-            ),  # week crosses Dec/Jan (year change)
-            datetime(2026, 6, 15, tzinfo=timezone.utc),  # mid-month, no boundary
+            datetime(2026, 9, 2, tzinfo=UTC),  # week crosses Aug/Sep
+            datetime(2026, 3, 1, tzinfo=UTC),  # week crosses Feb/Mar
+            datetime(2027, 1, 1, tzinfo=UTC),  # week crosses Dec/Jan (year change)
+            datetime(2026, 6, 15, tzinfo=UTC),  # mid-month, no boundary
         ]
         for fixed_now in boundary_dates:
             with self.subTest(today=fixed_now):
@@ -522,8 +516,8 @@ class AllMonthsInYearPackagerTestCase(unittest.TestCase):
 
     def test_month_chunks_never_cross_a_month_boundary(self):
         files = [
-            make_file("2025-01/file.mp4", datetime(2025, 1, 31, tzinfo=timezone.utc)),
-            make_file("2025-02/file.mp4", datetime(2025, 2, 28, tzinfo=timezone.utc)),
+            make_file("2025-01/file.mp4", datetime(2025, 1, 31, tzinfo=UTC)),
+            make_file("2025-02/file.mp4", datetime(2025, 2, 28, tzinfo=UTC)),
         ]
         with frozen_time(TODAY):
             _packager, client = run_packager(
@@ -540,9 +534,7 @@ class AllMonthsInYearPackagerTestCase(unittest.TestCase):
     def test_includes_the_current_month_unlike_all_months_this_year(self):
         # Unlike AllMonthsThisYearPackager, a specific past year should
         # include every month with files, including December.
-        files = [
-            make_file("2025-12/file.mp4", datetime(2025, 12, 25, tzinfo=timezone.utc))
-        ]
+        files = [make_file("2025-12/file.mp4", datetime(2025, 12, 25, tzinfo=UTC))]
         with frozen_time(TODAY):
             _packager, client = run_packager(
                 process.AllMonthsInYearPackager, extra_args=["2025"], files=files
@@ -576,9 +568,7 @@ class AllMonthsInYearPackagerTestCase(unittest.TestCase):
             ],
         }
         # Only January has files this run, so February must survive.
-        files = [
-            make_file("2025-01/file.mp4", datetime(2025, 1, 15, tzinfo=timezone.utc))
-        ]
+        files = [make_file("2025-01/file.mp4", datetime(2025, 1, 15, tzinfo=UTC))]
         with frozen_time(TODAY):
             _packager, client = run_packager(
                 process.AllMonthsInYearPackager,
@@ -599,10 +589,8 @@ class AllWeeksThisMonthPackagerMatchesThisWeekPackagerTestCase(unittest.TestCase
     """
 
     def test_opening_partial_week_matches_this_week_packager(self):
-        fixed_now = datetime(2026, 9, 2, 12, 0, 0, tzinfo=timezone.utc)
-        files = [
-            make_file("2026-09-01/file.mp4", datetime(2026, 9, 1, tzinfo=timezone.utc))
-        ]
+        fixed_now = datetime(2026, 9, 2, 12, 0, 0, tzinfo=UTC)
+        files = [make_file("2026-09-01/file.mp4", datetime(2026, 9, 1, tzinfo=UTC))]
         with frozen_time(fixed_now):
             this_week_packager = process.ThisWeekPackager()
             _packager, client = run_packager(
@@ -625,9 +613,9 @@ class AllWeeksThisMonthPackagerMonthBoundaryTestCase(unittest.TestCase):
     def test_last_week_of_month_never_crosses_a_month_boundary(self):
         # 2026-09-28 is a Monday, but September only has 30 days, so the
         # Mon-Sun week for that Monday would otherwise run into October.
-        fixed_now = datetime(2026, 9, 30, 12, 0, 0, tzinfo=timezone.utc)
+        fixed_now = datetime(2026, 9, 30, 12, 0, 0, tzinfo=UTC)
         overflowing_week_file = [
-            make_file("2026-09-w5/file.mp4", datetime(2026, 9, 29, tzinfo=timezone.utc))
+            make_file("2026-09-w5/file.mp4", datetime(2026, 9, 29, tzinfo=UTC))
         ]
         with frozen_time(fixed_now):
             _packager, client = run_packager(
@@ -667,10 +655,8 @@ class AllWeeksThisMonthPackagerRerunTestCase(unittest.TestCase):
                 }
             ],
         }
-        files = [
-            make_file("2026-09-01/file.mp4", datetime(2026, 9, 1, tzinfo=timezone.utc))
-        ]
-        with frozen_time(datetime(2026, 9, 2, 12, 0, 0, tzinfo=timezone.utc)):
+        files = [make_file("2026-09-01/file.mp4", datetime(2026, 9, 1, tzinfo=UTC))]
+        with frozen_time(datetime(2026, 9, 2, 12, 0, 0, tzinfo=UTC)):
             _packager, client = run_packager(
                 process.AllWeeksThisMonthPackager,
                 files=files,
@@ -706,10 +692,8 @@ class AllWeeksThisMonthPackagerRerunTestCase(unittest.TestCase):
             ],
         }
         # Only week 2 (Sep 14-20) has a file this run.
-        files = [
-            make_file("2026-09-15/file.mp4", datetime(2026, 9, 15, tzinfo=timezone.utc))
-        ]
-        with frozen_time(datetime(2026, 9, 21, 12, 0, 0, tzinfo=timezone.utc)):
+        files = [make_file("2026-09-15/file.mp4", datetime(2026, 9, 15, tzinfo=UTC))]
+        with frozen_time(datetime(2026, 9, 21, 12, 0, 0, tzinfo=UTC)):
             _packager, client = run_packager(
                 process.AllWeeksThisMonthPackager,
                 files=files,
@@ -728,8 +712,8 @@ class ThisMonthPackagerMonthBoundaryTestCase(unittest.TestCase):
 
     def test_never_crosses_a_month_boundary(self):
         boundary_dates = [
-            datetime(2026, 9, 30, tzinfo=timezone.utc),  # last day of the month
-            datetime(2026, 2, 1, tzinfo=timezone.utc),  # first day of the month
+            datetime(2026, 9, 30, tzinfo=UTC),  # last day of the month
+            datetime(2026, 2, 1, tzinfo=UTC),  # first day of the month
         ]
         for fixed_now in boundary_dates:
             with self.subTest(today=fixed_now):
@@ -747,10 +731,10 @@ class AllMonthsThisYearPackagerMonthBoundaryTestCase(unittest.TestCase):
     """
 
     def test_month_chunks_never_cross_a_month_boundary(self):
-        fixed_now = datetime(2026, 9, 2, tzinfo=timezone.utc)
+        fixed_now = datetime(2026, 9, 2, tzinfo=UTC)
         files = [
-            make_file("2026-01/file.mp4", datetime(2026, 1, 31, tzinfo=timezone.utc)),
-            make_file("2026-02/file.mp4", datetime(2026, 2, 28, tzinfo=timezone.utc)),
+            make_file("2026-01/file.mp4", datetime(2026, 1, 31, tzinfo=UTC)),
+            make_file("2026-02/file.mp4", datetime(2026, 2, 28, tzinfo=UTC)),
         ]
         with frozen_time(fixed_now):
             _packager, client = run_packager(
@@ -866,9 +850,9 @@ class SizedPackagerTestCase(unittest.TestCase):
 
     def test_a_single_oversized_file_still_gets_its_own_batch(self):
         oversized_files = [
-            make_file("small.mp4", datetime(2026, 1, 1, tzinfo=timezone.utc), size=10),
-            make_file("huge.mp4", datetime(2026, 1, 2, tzinfo=timezone.utc), size=1000),
-            make_file("small2.mp4", datetime(2026, 1, 3, tzinfo=timezone.utc), size=10),
+            make_file("small.mp4", datetime(2026, 1, 1, tzinfo=UTC), size=10),
+            make_file("huge.mp4", datetime(2026, 1, 2, tzinfo=UTC), size=1000),
+            make_file("small2.mp4", datetime(2026, 1, 3, tzinfo=UTC), size=10),
         ]
         with frozen_time(TODAY):
             _packager, client = run_packager(
@@ -982,12 +966,10 @@ class AllPreviousYearsPackagerTestCase(unittest.TestCase):
 
     def test_excludes_the_current_year_and_orders_newest_first(self):
         files = [
-            make_file("2022/file.mp4", datetime(2022, 6, 1, tzinfo=timezone.utc)),
-            make_file("2023/file.mp4", datetime(2023, 6, 1, tzinfo=timezone.utc)),
-            make_file("2024/file.mp4", datetime(2024, 6, 1, tzinfo=timezone.utc)),
-            make_file(
-                "2026-current/file.mp4", datetime(2026, 6, 1, tzinfo=timezone.utc)
-            ),
+            make_file("2022/file.mp4", datetime(2022, 6, 1, tzinfo=UTC)),
+            make_file("2023/file.mp4", datetime(2023, 6, 1, tzinfo=UTC)),
+            make_file("2024/file.mp4", datetime(2024, 6, 1, tzinfo=UTC)),
+            make_file("2026-current/file.mp4", datetime(2026, 6, 1, tzinfo=UTC)),
         ]
         with frozen_time(TODAY):
             _packager, client = run_packager(
@@ -1024,7 +1006,7 @@ class AllPreviousYearsPackagerTestCase(unittest.TestCase):
         }
         # Only 2024 has files this run, so only the stale "2024" entry
         # should be replaced; "2026" is out of range and always kept.
-        files = [make_file("2024/file.mp4", datetime(2024, 6, 1, tzinfo=timezone.utc))]
+        files = [make_file("2024/file.mp4", datetime(2024, 6, 1, tzinfo=UTC))]
         with frozen_time(TODAY):
             _packager, client = run_packager(
                 process.AllPreviousYearsPackager,
@@ -1055,7 +1037,7 @@ class AllPreviousYearsPackagerTestCase(unittest.TestCase):
                 },
             ],
         }
-        files = [make_file("2023/file.mp4", datetime(2023, 6, 1, tzinfo=timezone.utc))]
+        files = [make_file("2023/file.mp4", datetime(2023, 6, 1, tzinfo=UTC))]
         with frozen_time(TODAY):
             _packager, client = run_packager(
                 process.AllPreviousYearsPackager,

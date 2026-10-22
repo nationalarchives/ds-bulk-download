@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from stat import S_IFREG
 
 import boto3
@@ -35,7 +35,7 @@ class BatchManifestItem(BaseModel):
 class BatchManifest(BaseModel):
     packager: str
     packager_group: str
-    updated: datetime = datetime.now(timezone.utc)
+    updated: datetime = datetime.now(UTC)
     items: list[BatchManifestItem]
 
 
@@ -158,7 +158,7 @@ class Packager:
                 else self.export_filename,
                 total_size=sum(file["Size"] for file in self.files),
                 file_count=len(self.files),
-                created_timestamp=datetime.now(timezone.utc),
+                created_timestamp=datetime.now(UTC),
                 from_datetime=self.from_datetime,
                 to_datetime=self.to_datetime,
             ),
@@ -332,7 +332,7 @@ class ThisWeekPackager(Packager):
     packager_group = "by_date"
 
     def __init__(self):
-        today_datetime = datetime.now(timezone.utc)
+        today_datetime = datetime.now(UTC)
         week_start = (
             today_datetime - timedelta(days=today_datetime.weekday())
         ).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -375,7 +375,7 @@ class ThisWeekPackager(Packager):
                 else self.export_filename,
                 total_size=sum(file["Size"] for file in self.files),
                 file_count=len(self.files),
-                created_timestamp=datetime.now(timezone.utc),
+                created_timestamp=datetime.now(UTC),
                 from_datetime=self.from_datetime,
                 to_datetime=self.to_datetime,
             ),
@@ -401,7 +401,7 @@ class AllWeeksThisMonthPackager(Packager):
     packager_group = "by_date"
 
     def __init__(self):
-        today_datetime = datetime.now(timezone.utc)
+        today_datetime = datetime.now(UTC)
         from_datetime = today_datetime.replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
         )
@@ -412,7 +412,7 @@ class AllWeeksThisMonthPackager(Packager):
 
     def _chunk(self) -> list[FileBatch]:
         logger.info("Chunking files")
-        today_datetime = datetime.now(timezone.utc)
+        today_datetime = datetime.now(UTC)
         # Start from the Monday of the week containing day 1, which may fall
         # in the previous month, so a month that doesn't start on a Monday
         # still gets a chunk for its opening partial week - matching what
@@ -443,7 +443,7 @@ class AllWeeksThisMonthPackager(Packager):
                         else f"{today_datetime.strftime('%Y-%m')}-w{week_index}.zip",
                         total_size=sum(file["Size"] for file in files),
                         file_count=len(files),
-                        created_timestamp=datetime.now(timezone.utc),
+                        created_timestamp=datetime.now(UTC),
                         from_datetime=clamped_week_start,
                         to_datetime=clamped_week_end,
                     ),
@@ -480,12 +480,12 @@ class LastMonthPackager(Packager):
     packager_group = "by_date"
 
     def __init__(self):
-        today_datetime = datetime.now(timezone.utc)
+        today_datetime = datetime.now(UTC)
         if today_datetime.month == 1:
             return  # Skip processing for January as there is no last month in the same year
         last_month = today_datetime.replace(day=1) + timedelta(days=-1)
         from_datetime = datetime(
-            last_month.year, last_month.month, 1, 0, 0, 0, 0, tzinfo=timezone.utc
+            last_month.year, last_month.month, 1, 0, 0, 0, 0, tzinfo=UTC
         )
         to_datetime = datetime(
             last_month.year,
@@ -495,7 +495,7 @@ class LastMonthPackager(Packager):
             59,
             59,
             999999,
-            tzinfo=timezone.utc,
+            tzinfo=UTC,
         )
         export_filename = f"{last_month.strftime('%Y-%m')}.zip"
         self.name = f"{last_month.strftime('%B %Y')}"
@@ -515,7 +515,7 @@ class LastMonthPackager(Packager):
                 else self.export_filename,
                 total_size=sum(file["Size"] for file in self.files),
                 file_count=len(self.files),
-                created_timestamp=datetime.now(timezone.utc),
+                created_timestamp=datetime.now(UTC),
                 from_datetime=self.from_datetime,
                 to_datetime=self.to_datetime,
             ),
@@ -541,7 +541,7 @@ class ThisMonthPackager(Packager):
     packager_group = "by_date"
 
     def __init__(self):
-        today_datetime = datetime.now(timezone.utc)
+        today_datetime = datetime.now(UTC)
         from_datetime = today_datetime.replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
         )
@@ -566,7 +566,7 @@ class ThisMonthPackager(Packager):
                 else self.export_filename,
                 total_size=sum(file["Size"] for file in self.files),
                 file_count=len(self.files),
-                created_timestamp=datetime.now(timezone.utc),
+                created_timestamp=datetime.now(UTC),
                 from_datetime=self.from_datetime,
                 to_datetime=self.to_datetime,
             ),
@@ -606,7 +606,7 @@ class MonthPackager(Packager):
             raise ValueError(
                 f"Invalid month argument: {args[0]!r}. Month must be between 01 and 12."
             )
-        from_datetime = datetime(year, month, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+        from_datetime = datetime(year, month, 1, 0, 0, 0, 0, tzinfo=UTC)
         to_datetime = (from_datetime + timedelta(days=32)).replace(day=1) - timedelta(
             microseconds=1
         )
@@ -628,7 +628,7 @@ class MonthPackager(Packager):
                 else self.export_filename,
                 total_size=sum(file["Size"] for file in self.files),
                 file_count=len(self.files),
-                created_timestamp=datetime.now(timezone.utc),
+                created_timestamp=datetime.now(UTC),
                 from_datetime=self.from_datetime,
                 to_datetime=self.to_datetime,
             ),
@@ -654,7 +654,7 @@ class AllMonthsThisYearPackager(Packager):
     packager_group = "by_date"
 
     def __init__(self):
-        today_datetime = datetime.now(timezone.utc)
+        today_datetime = datetime.now(UTC)
         from_datetime = today_datetime.replace(
             day=1, month=1, hour=0, minute=0, second=0, microsecond=0
         )
@@ -666,7 +666,7 @@ class AllMonthsThisYearPackager(Packager):
     def _chunk(self) -> list[FileBatch]:
         logger.info("Chunking files")
         chunks = []
-        today_datetime = datetime.now(timezone.utc)
+        today_datetime = datetime.now(UTC)
         for month in range(1, today_datetime.month):
             month_start = today_datetime.replace(
                 day=1, month=month, hour=0, minute=0, second=0, microsecond=0
@@ -689,7 +689,7 @@ class AllMonthsThisYearPackager(Packager):
                     else f"{month_start.strftime('%Y-%m')}.zip",
                     total_size=sum(file["Size"] for file in files),
                     file_count=len(files),
-                    created_timestamp=datetime.now(timezone.utc),
+                    created_timestamp=datetime.now(UTC),
                     from_datetime=month_start,
                     to_datetime=month_end,
                 ),
@@ -732,8 +732,8 @@ class AllMonthsInYearPackager(Packager):
                 f"Invalid year argument: {args[0]!r}. Expected YYYY format."
             )
         year = int(args[0])
-        from_datetime = datetime(year, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
-        to_datetime = datetime(year, 12, 31, 23, 59, 59, 999999, tzinfo=timezone.utc)
+        from_datetime = datetime(year, 1, 1, 0, 0, 0, 0, tzinfo=UTC)
+        to_datetime = datetime(year, 12, 31, 23, 59, 59, 999999, tzinfo=UTC)
         super().__init__(from_datetime=from_datetime, to_datetime=to_datetime)
 
     def _chunk(self) -> list[FileBatch]:
@@ -741,7 +741,7 @@ class AllMonthsInYearPackager(Packager):
         chunks = []
         year = self.from_datetime.year
         for month in range(1, 13):
-            month_start = datetime(year, month, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+            month_start = datetime(year, month, 1, 0, 0, 0, 0, tzinfo=UTC)
             month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(
                 microseconds=1
             )
@@ -760,7 +760,7 @@ class AllMonthsInYearPackager(Packager):
                     else f"{month_start.strftime('%Y-%m')}.zip",
                     total_size=sum(file["Size"] for file in files),
                     file_count=len(files),
-                    created_timestamp=datetime.now(timezone.utc),
+                    created_timestamp=datetime.now(UTC),
                     from_datetime=month_start,
                     to_datetime=month_end,
                 ),
@@ -794,13 +794,11 @@ class LastYearPackager(Packager):
     packager_group = "by_date"
 
     def __init__(self):
-        today_datetime = datetime.now(timezone.utc)
+        today_datetime = datetime.now(UTC)
         today_year = today_datetime.year
         yesteryear = today_year - 1
-        from_datetime = datetime(yesteryear, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
-        to_datetime = datetime(
-            yesteryear, 12, 31, 23, 59, 59, 999999, tzinfo=timezone.utc
-        )
+        from_datetime = datetime(yesteryear, 1, 1, 0, 0, 0, 0, tzinfo=UTC)
+        to_datetime = datetime(yesteryear, 12, 31, 23, 59, 59, 999999, tzinfo=UTC)
         export_filename = f"{yesteryear}.zip"
         self.name = str(yesteryear)
         super().__init__(
@@ -819,7 +817,7 @@ class LastYearPackager(Packager):
                 else self.export_filename,
                 total_size=sum(file["Size"] for file in self.files),
                 file_count=len(self.files),
-                created_timestamp=datetime.now(timezone.utc),
+                created_timestamp=datetime.now(UTC),
                 from_datetime=self.from_datetime,
                 to_datetime=self.to_datetime,
             ),
@@ -845,7 +843,7 @@ class ThisYearPackager(Packager):
     packager_group = "by_date"
 
     def __init__(self):
-        today_datetime = datetime.now(timezone.utc)
+        today_datetime = datetime.now(UTC)
         from_datetime = today_datetime.replace(
             day=1, month=1, hour=0, minute=0, second=0, microsecond=0
         )
@@ -870,7 +868,7 @@ class ThisYearPackager(Packager):
                 else self.export_filename,
                 total_size=sum(file["Size"] for file in self.files),
                 file_count=len(self.files),
-                created_timestamp=datetime.now(timezone.utc),
+                created_timestamp=datetime.now(UTC),
                 from_datetime=self.from_datetime,
                 to_datetime=self.to_datetime,
             ),
@@ -903,8 +901,8 @@ class YearPackager(Packager):
                 f"Invalid year argument: {args[0]!r}. Expected YYYY format."
             )
         year = int(args[0])
-        from_datetime = datetime(year, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
-        to_datetime = datetime(year, 12, 31, 23, 59, 59, 999999, tzinfo=timezone.utc)
+        from_datetime = datetime(year, 1, 1, 0, 0, 0, 0, tzinfo=UTC)
+        to_datetime = datetime(year, 12, 31, 23, 59, 59, 999999, tzinfo=UTC)
         export_filename = f"{year}.zip"
         self.name = str(year)
         super().__init__(
@@ -923,7 +921,7 @@ class YearPackager(Packager):
                 else self.export_filename,
                 total_size=sum(file["Size"] for file in self.files),
                 file_count=len(self.files),
-                created_timestamp=datetime.now(timezone.utc),
+                created_timestamp=datetime.now(UTC),
                 from_datetime=self.from_datetime,
                 to_datetime=self.to_datetime,
             ),
@@ -949,22 +947,22 @@ class AllPreviousYearsPackager(Packager):
     packager_group = "by_date"
 
     def __init__(self):
-        today_datetime = datetime.now(timezone.utc)
+        today_datetime = datetime.now(UTC)
         to_datetime = today_datetime.replace(day=1, month=1) - timedelta(days=1)
         super().__init__(to_datetime=to_datetime)
 
     def _chunk(self) -> list[FileBatch]:
         logger.info("Chunking files")
         chunks = []
-        this_year = datetime.now(timezone.utc).year
+        this_year = datetime.now(UTC).year
         years = {file["LastModified"].year for file in self.files}
         years = [year for year in years if year < this_year]
         for year in sorted(years, reverse=True):
             if year >= this_year:
                 continue
             logger.debug(f"Processing year: {year}")
-            year_start = datetime(year, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
-            year_end = datetime(year, 12, 31, 23, 59, 59, 999999, tzinfo=timezone.utc)
+            year_start = datetime(year, 1, 1, 0, 0, 0, 0, tzinfo=UTC)
+            year_end = datetime(year, 12, 31, 23, 59, 59, 999999, tzinfo=UTC)
             files = [
                 file
                 for file in self.files
@@ -980,7 +978,7 @@ class AllPreviousYearsPackager(Packager):
                     else f"{year_start.strftime('%Y')}.zip",
                     total_size=sum(file["Size"] for file in files),
                     file_count=len(files),
-                    created_timestamp=datetime.now(timezone.utc),
+                    created_timestamp=datetime.now(UTC),
                     from_datetime=year_start,
                     to_datetime=year_end,
                 ),
@@ -1036,7 +1034,7 @@ class ChunkedPackager(AllPackager):
                     else f"all_{f'{(i + 1):04}'}.zip",
                     total_size=sum(file["Size"] for file in chunk),
                     file_count=len(chunk),
-                    created_timestamp=datetime.now(timezone.utc),
+                    created_timestamp=datetime.now(UTC),
                     from_datetime=self.from_datetime,
                     to_datetime=self.to_datetime,
                 ),
@@ -1081,7 +1079,7 @@ class SizedPackager(AllPackager):
                     else f"all_{f'{(i + 1):04}'}.zip",
                     total_size=sum(file["Size"] for file in chunk),
                     file_count=len(chunk),
-                    created_timestamp=datetime.now(timezone.utc),
+                    created_timestamp=datetime.now(UTC),
                     from_datetime=self.from_datetime,
                     to_datetime=self.to_datetime,
                 ),
