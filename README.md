@@ -47,6 +47,7 @@ In addition to the [base Docker image variables](https://github.com/nationalarch
 | ---------------------------- | -------------------------------------------------------------------- | ------------------------------------------ |
 | `CONFIG`                     | The configuration to use                                             | `config.Production`                        |
 | `DEBUG`                      | If true, allow debugging[^1]                                         | `False`                                    |
+| `PROXY_DEPTH`                | The number of proxies to trust for `X-Forwarded-` headers[^2]        | `0`                                        |
 | `COOKIE_DOMAIN`              | The domain to save cookie preferences against                        | _none_                                     |
 | `COOKIE_PREFERENCES_URL`     | The URL for changing cookie preferences                              | _none_                                     |
 | `CSP_IMG_SRC`                | A comma separated list of CSP rules for `img-src`                    | `'self'`                                   |
@@ -72,3 +73,4 @@ In addition to the [base Docker image variables](https://github.com/nationalarch
 | `S3_SOURCE_PREFIX_MERLIN`    | The S3 prefix for the source Merlin files                            | _none_                                     |
 
 [^1] [Debugging in Flask](https://flask.palletsprojects.com/en/2.3.x/debugging/)
+[^2] [Tell Flask it is Behind a Proxy](https://flask.palletsprojects.com/en/stable/deploying/proxy_fix/)
